@@ -1,10 +1,10 @@
 # Installation guide — CFS RFID ESP32-C6
 
-This guide is for building and setting up the CFS RFID reader for the first time. You don't need to know how to program an ESP32, but you will need to **assemble and wire the electronics**, install some Arduino software, and upload the firmware by USB.
+This guide covers first-time setup and migration to OTA-capable firmware. You will need to **assemble and wire the electronics**, install Arduino software and use **USB for the first flash**. Once the dual-OTA partition layout is installed, later compatible application updates can be uploaded through the reader’s web interface.
 
 **Start here:** [Project overview and photos](../README.md) · [Wiring diagram (PDF)](Wiring_Reference.pdf) · [Printable enclosure](../enclosure_stls/) · [Security notes](SECURITY.md)
 
-> **Before you start (v1.0.1):** This maintenance release builds on the v1.0.0 baseline, fixes the Database Updater interface, preserves manual JSON recovery and removes the obsolete web firmware updater. RFID operations and the established printer SSH/SCP/database transfer routines are unchanged. The public-safe source contains placeholder credentials; configure your own access-point and printer settings.
+> **IMPORTANT — upgrading from v1.0.1 or earlier:** This release introduces a new **dual-OTA partition layout**. The first installation of this layout **requires USB** and can make the reader’s existing **LittleFS database and settings inaccessible or cause them to be formatted**. Before flashing, use **Database Updater → Download Database** to save `material_database.json` and record your access-point, Wi-Fi and printer configuration. Restore your data after the USB migration. **Do not upload the OTA `.bin` to an old No OTA installation.** See [the migration procedure](#moving-an-existing-reader-to-web-firmware-updates).
 
 ## 1. Collect the parts
 
@@ -91,9 +91,9 @@ What these mean:
 - **PRINTER_HOSTNAME:** your compatible printer's address or hostname. Leave this empty until you're ready to configure printer functions.
 - **AP_ENABLED:** enables or disables the device's own Wi-Fi access point. Keep it **true** for first-time setup so you have a way to reach the web page.
 
-The public-safe sketch also contains `PRINTER_PASS = "SET_YOUR_PRINTER_PASSWORD"`. Printer SSH details must be configured separately before using printer sync/push. **Don't copy credentials into a public GitHub commit** or publish screenshots showing them.
+**Printer SSH credentials:** The release binary does not include your printer’s private root password. After installing the OTA-capable firmware, enter it under **Settings → Printer SSH Password** and save. This is especially important when upgrading from a sketch with a compiled-in password: the compiled value cannot be carried into a publicly built binary. The setting is saved in `/config.ini` and was confirmed to survive a subsequent OTA update. Leave the field blank in later settings changes to retain the saved password. **Do not publish credentials in commits, logs or screenshots.** The password is stored as plaintext in LittleFS and submitted over unauthenticated local HTTP: use only a trusted, isolated network.
 
-> **Printer SSH password compatibility ([Issue #2](https://github.com/gavrd7/CFS-RFID-ESP32/issues/2)):** A contributor reported LibSSH-ESP32 authentication failures with a backslash (`\`) in the root password, even though their diagnostic reported the correct `0x5C` byte reaching the library. A separate K2 test successfully connected and pulled the material database with a trailing backslash, so this is **not a universal restriction**. In C++ source, each literal backslash must be escaped as `\\` (for example, the source string `"example\\"` represents a password ending in one backslash). If authentication fails, verify the compiled bytes and printer SSH configuration. This applies only to printer SSH credentials, not Wi-Fi or AP passwords.
+> **Printer SSH password compatibility ([Issue #2](https://github.com/gavrd7/CFS-RFID-ESP32/issues/2)):** A contributor reported LibSSH-ESP32 authentication failures with a backslash (`\`) in the root password, even though their diagnostic reported the correct `0x5C` byte reaching the library. A separate K2 test successfully connected and pulled the material database with a trailing backslash, so this is **not a universal restriction**. When entering a password in the web Settings field, type the **literal password** normally; no C++ string escaping is required. If authentication fails, verify printer SSH access and saved settings. This applies only to printer SSH credentials, not Wi-Fi or AP passwords.
 
 **Settings stored on the board can override the sketch's starting defaults.** When troubleshooting an existing device, check the web configuration and stored `/config.ini` values as well.
 
@@ -106,7 +106,7 @@ In **Tools**, choose the equivalent settings for your installed ESP32 core:
 | Board | **XIAO_ESP32C6** |
 | USB CDC On Boot | **Enabled** |
 | Flash size | **4 MB** |
-| Partition scheme | **No OTA (2MB APP / 2MB SPIFFS)** |
+| Partition scheme | **Custom `partitions.csv` from the sketch folder (two OTA app slots + LittleFS)** |
 | PSRAM | **None** |
 | Erase All Flash Before Sketch Upload | **Disabled** when updating a configured device |
 | Serial Monitor baud | **115200** |
@@ -117,9 +117,26 @@ Click **Verify** (✓) to compile first. If successful, click **Upload**. Watch 
 
 **Important for existing devices:** the sketch calls `LittleFS.begin(true)`, which means a LittleFS mount failure can result in formatting the filesystem. Do not assume `Erase All Flash: Disabled` guarantees stored configuration survives every failure or partition-layout change. Back up settings before reflashing or changing partition schemes.
 
-**v1.0.1 firmware updating:** Use **USB and Arduino IDE** to upload this release. The older web Firmware Updater page and `/update.html` endpoint were intentionally removed because the legacy flashing method was not validated. The replacement OTA updater in [PR #4](https://github.com/gavrd7/CFS-RFID-ESP32/pull/4) is separate and is **not part of v1.0.1**. Do not use its custom OTA partition instructions for this release. The current **No OTA** partition layout does not support web OTA updates.
+### Moving an existing reader to web firmware updates
 
-You do not normally need a separate LittleFS filesystem image upload because the web interface is embedded in the sketch.
+**This is a one-time, potentially destructive filesystem migration.** Firmware **v1.0.1 and earlier** used **No OTA (2MB APP / 2MB SPIFFS)**, which cannot accept an OTA application update. The new `partitions.csv` for the **4 MB XIAO ESP32-C6** has two 0x1B0000-byte application slots and a 0x90000-byte LittleFS-compatible data partition. **The filesystem moves to a different offset and size. Existing files are not migrated automatically, and `LittleFS.begin(true)` can format an unmountable filesystem. Treat settings and local database contents as at risk of loss.**
+
+1. **Back up before flashing.** On the currently running v1.0.1 reader, open **Database Updater → Download Database** and save the downloaded `material_database.json` somewhere safe. Record the AP/Wi-Fi SSIDs, passwords, hostname, printer address and any custom entries. The JSON backup does **not** include all of these settings.
+2. **Prepare the complete sketch** from this release, including its `partitions.csv`. Select the XIAO ESP32-C6 with 4 MB flash; verify the custom partition layout is actually used and the application is no larger than its 0x1B0000-byte slot. Do not flash just the OTA application `.bin` to the old layout.
+3. **Flash once over USB** to install the new partition table and firmware. The old local database/configuration may be lost or reformatted; this is an expected migration risk, not a normal OTA behaviour. Keep the USB cable available for recovery.
+4. **Restore the reader configuration** through Settings (Wi-Fi/AP, hostname, printer host/IP). Enter the printer root password under **Settings → Printer SSH Password** and save; a publicly compiled image cannot contain the password from your old private sketch.
+5. **Restore the local database** with **Database Updater → Select file → Update Database** using your saved JSON. Alternatively, **Sync From Printer** can restore the printer’s current material list, but **may not recover custom entries stored only on the reader**. Confirm the entries before continuing.
+6. **Test ordinary OTA updating.** In **Settings → Firmware Updater**, upload only the **`CFS-RFID-XIAO-ESP32C6-OTA.bin`** application image from a successful tagged release or Actions artifact. After the successful flash and restart, verify the local database, printer SSH password and Wi-Fi settings are retained.
+
+**After migration:** Use **only the application OTA `.bin`** for web updates — never a bootloader, partitions, filesystem, merged-flash or arbitrary ESP32 binary. Ordinary OTA writes an inactive application partition, so it should **preserve the separate LittleFS data partition**. Hardware testing confirmed OTA upload/reboot and retention of the saved printer SSH password; the reader’s material database was also restored after the initial USB migration. OTA remains manual, cannot change the partition layout and does not guarantee automatic rollback.
+
+> **Security:** The device's web interface, including its firmware upload endpoint, is currently intended **only for a trusted local network** and has no verified authentication. Anyone who can access that endpoint may be able to install arbitrary firmware. Never expose it directly to the internet or an untrusted LAN. **OTA does not currently provide signed-firmware verification or guaranteed rollback.**
+
+### Build assets from GitHub Actions
+
+The `Build ESP32-C6 firmware and release assets` workflow compiles the sketch and packages the **OTA application binary**, a **versioned Arduino sketch ZIP** (including the custom partition table), the **wiring reference PDF**, **`enclosure_stls.zip`** (including the 3MF), and **SHA-256 checksums for every asset**. It takes the wiring and enclosure files from the same repository commit used to build the firmware, so releases automatically include revisions when those files change. Source code is also available from GitHub. Tagged `v*` releases attach these files when the build passes. The build is pinned to ESP32 core 3.3.3 and LibSSH-ESP32 5.10.0; it must pass CI and be hardware-tested before relying on release binaries. **If compilation fails or the binary is too large, no OTA binary should be published.**
+
+The embedded web interface does not require a separate LittleFS filesystem upload. Release assets include the OTA `.bin`, Arduino sketch ZIP with `partitions.csv`, wiring PDF, enclosure archive and `SHA256SUMS.txt`.
 
 ## 6. Connect to the web interface
 
@@ -190,6 +207,8 @@ The web interface provides these separate manual actions:
 | Can't find the setup Wi-Fi | Confirm `AP_ENABLED = true`, check the saved configuration and read the Serial Monitor |
 | Can't open `10.1.0.1` | Connect **to the device's AP** first, check AP IP in Serial Monitor and use `http://` rather than `https://` |
 | `.local` hostname not working | Use the device's local IP instead; mDNS discovery is network-dependent |
+| Settings or database disappeared after first OTA-capable USB flash | This can happen because the partition layout moves LittleFS. Restore the saved `material_database.json`, re-enter settings and the printer SSH password; see the migration instructions above |
+| Printer authentication fails after installing a public OTA binary | Enter **Settings → Printer SSH Password** and save. A compiled-in password from older private builds does not carry over automatically |
 | Settings disappeared after reflashing | Review flash erase settings, partition changes and LittleFS mount/format messages |
 | Printer sync/push fails | Verify network reachability, SSH access and printer compatibility; **do not keep retrying push without a database backup** |
 

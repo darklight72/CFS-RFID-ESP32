@@ -1,0 +1,161 @@
+name: Build ESP32-C6 firmware and release assets
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install toolchain and libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          esp32_index="https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+          # GitHub-hosted runners download the ESP32 toolchain afresh. Some
+          # Espressif mirror requests intermittently return HTTP 504, notably
+          # esp32:esp-x32@2507. Retry failed installs, not firmware builds.
+          retry_install() {
+            local attempt delay
+            for attempt in 1 2 3 4 5; do
+              if "$@"; then return 0; fi
+              if [[ "$attempt" -eq 5 ]]; then
+                echo "::error::Dependency installation failed after 5 attempts."
+                return 1
+              fi
+              delay=$((attempt * 15))
+              echo "::warning::Dependency download failed (attempt ${attempt}/5); retrying in ${delay}s."
+              sleep "$delay"
+            done
+          }
+          retry_install arduino-cli core update-index --additional-urls "$esp32_index"
+          retry_install arduino-cli core install esp32:esp32@3.3.3 --additional-urls "$esp32_index"
+          retry_install arduino-cli lib install "Adafruit GFX Library" "Adafruit ST7735 and ST7789 Library" "LibSSH-ESP32@5.10.0"
+      - name: Compile for XIAO ESP32-C6 with OTA partitions
+        run: |
+          mkdir -p dist/build
+          # The sketch's partitions.csv is selected by the ESP32 build system,
+          # but Arduino CLI otherwise retains the board's default 1.25MB
+          # size check. Match the two 0x1B0000-byte OTA application slots.
+          arduino-cli compile \
+            --fqbn esp32:esp32:XIAO_ESP32C6 \
+            --build-property upload.maximum_size=1769472 \
+            --output-dir dist/build \
+            firmware/CFS_RFID_XIAO_C6_TFT
+      - name: Package application binary, sketch, and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          # Verify the emitted partition binary includes both OTA app
+          # partitions and LittleFS storage before publishing any image.
+          partitions="$(find dist/build -maxdepth 1 -name '*.partitions.bin' -print -quit)"
+          test -n "$partitions"
+          python3 - "$partitions" <<'PY'
+          import struct, sys
+          data = open(sys.argv[1], "rb").read()
+          found = {}
+          for pos in range(0, len(data), 32):
+              entry = data[pos:pos+32]
+              if len(entry) < 32 or entry[:2] != bytes((0xAA, 0x50)):
+                  continue
+              _, ptype, subtype, offset, size, name, flags = struct.unpack("<HBBII16sI", entry)
+              found[name.split(bytes((0,)), 1)[0].decode()] = (ptype, subtype, offset, size)
+          assert found.get("app0", (None, None, None, None))[3] == 0x1B0000, found
+          assert found.get("app1", (None, None, None, None))[3] == 0x1B0000, found
+          assert "spiffs" in found, found
+          PY
+          binary="$(find dist/build -maxdepth 1 -type f -name '*.ino.bin' -print -quit)"
+          test -n "$binary"
+          # Max size of either app slot in firmware/.../partitions.csv.
+          test "$(stat -c%s "$binary")" -le "$((0x1B0000))"
+          # Match the established release asset names while also providing
+          # the new standalone OTA application binary. Development/PR builds
+          # use a descriptive snapshot suffix instead of a release version.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="snapshot-${GITHUB_SHA:0:7}"
+          fi
+
+          # Use the wiring reference and enclosure files from this exact
+          # commit, not potentially outdated assets from a previous release.
+          # If they have not changed, these naturally match the old assets.
+          test -s docs/Wiring_Reference.pdf
+          test -d enclosure_stls
+          test -n "$(find enclosure_stls -maxdepth 1 -type f -name '*.stl' -print -quit)"
+          test -f enclosure_stls/'RFID with display.3mf'
+
+          cp "$binary" "dist/release/CFS-RFID-XIAO-ESP32C6-OTA.bin"
+          zip -qr "dist/release/CFS-RFID-ESP32-${version}-Arduino.zip" firmware/CFS_RFID_XIAO_C6_TFT
+          cp docs/Wiring_Reference.pdf "dist/release/CFS-RFID-ESP32-${version}-Wiring.pdf"
+          zip -qr dist/release/enclosure_stls.zip enclosure_stls
+
+          # Publish checksums for all four assets, not just firmware files.
+          (cd dist/release && sha256sum *.bin *.zip *.pdf > SHA256SUMS.txt)
+
+          echo "Release bundle contents:"
+          ls -lh dist/release/
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CFS-RFID-ESP32C6-firmware
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CFS-RFID-ESP32C6-firmware
+          path: release-assets
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          body: |
+            ## Important: one-time USB migration and database backup
+
+            Readers running v1.0.1 or older use the **No OTA** partition scheme.
+            You **cannot install this first OTA-capable release through the old web updater**:
+            back up the reader's local `material_database.json` using
+            **Database Updater → Download Database** and record its settings,
+            then flash the new sketch and its `partitions.csv` **once over USB**.
+            The partition layout changes the LittleFS address and size, so the
+            existing local database and settings may be lost or reformatted.
+            Restore them afterwards, either by uploading the saved JSON or by
+            manually syncing the printer's database (which may not contain
+            reader-only custom entries).
+
+            After the reader is running the new **dual-OTA** layout, later web
+            updates use only the `CFS-RFID-XIAO-ESP32C6-OTA.bin` application
+            image and normally preserve the LittleFS database and settings.
+            **Printer SSH password:** Public binaries contain no private password.
+            After the first migration, enter it under **Settings → Printer SSH
+            Password** and save. The stored password was verified to persist
+            across a subsequent OTA update. Do not expose stored credentials.
+            Keep USB recovery available. This updater is intended for a
+            **trusted local network** only; firmware uploads are not
+            authenticated or cryptographically signed.
+
+            ## Release downloads
+
+            - `CFS-RFID-XIAO-ESP32C6-OTA.bin` — application image for the new web updater
+            - `CFS-RFID-ESP32-${{ github.ref_name }}-Arduino.zip` — Arduino sketch, including OTA partition table
+            - `CFS-RFID-ESP32-${{ github.ref_name }}-Wiring.pdf` — wiring reference
+            - `enclosure_stls.zip` — printable enclosure parts and 3MF
+            - `SHA256SUMS.txt` — checksums for all downloads
+          generate_release_notes: true

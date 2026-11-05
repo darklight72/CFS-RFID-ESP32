@@ -292,6 +292,66 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
        #mmList th,#mmList td { padding:9px 10px; }
        #mmList .btn { padding:8px 10px;min-width:57px; }
     }
+    /* Settings dialog: consistent two-column alignment, centered and responsive. */
+    #cDialog .main > table {
+      width:min(100%,820px);
+      table-layout:fixed;
+      margin:10px auto 18px;
+    }
+    #cDialog tr > td:first-child {
+      width:37%;
+      box-sizing:border-box;
+      text-align:right;
+      padding:12px 16px;
+      vertical-align:middle;
+    }
+    #cDialog tr > td:nth-child(2) {
+      width:63%;
+      box-sizing:border-box;
+      text-align:left;
+      padding:12px 16px;
+      vertical-align:middle;
+    }
+    #cDialog tr > td:nth-child(2) input[type="text"],
+    #cDialog tr > td:nth-child(2) input[type="password"] {
+      display:block;
+      width:100%;
+      max-width:360px;
+      min-width:0;
+      box-sizing:border-box;
+      margin:0;
+    }
+    #cDialog tr > td:nth-child(2) small {
+      display:block;
+      width:100%;
+      max-width:360px;
+      box-sizing:border-box;
+      margin-top:8px;
+      line-height:1.5;
+      overflow-wrap:anywhere;
+    }
+    #cDialog .mv-settings-actions { justify-content:center;margin:20px auto 10px; }
+    @media (max-width:600px) {
+      #cDialog .main > table { table-layout:auto; }
+      #cDialog tr:not(:first-child) > td {
+        display:block;
+        width:100%;
+        text-align:left;
+        padding:8px 15px;
+        box-sizing:border-box;
+      }
+      #cDialog tr:not(:first-child) > td:first-child {
+        padding-bottom:3px;
+        font-weight:600;
+      }
+      #cDialog tr:not(:first-child) > td:nth-child(2) {
+        padding-top:3px;
+        padding-bottom:14px;
+      }
+      #cDialog tr > td:nth-child(2) input[type="text"],
+      #cDialog tr > td:nth-child(2) input[type="password"],
+      #cDialog tr > td:nth-child(2) small { max-width:none; }
+    }
   </style>
   <script>
     var filaments;
@@ -450,11 +510,13 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
               document.getElementById("wifi_ssid").value = configData[1];
               document.getElementById("wifi_host").value = configData[2];
               document.getElementById("printer_host").value = configData[3];
+              document.getElementById("printer_pass").value = ""; // Never return saved credentials to the browser.
               document.getElementById("ap_enabled").checked = configData.length > 4 ? configData[4] == "1" : true;
             } else {
               document.getElementById("ap_ssid").value = "K2_RFID";
               document.getElementById("wifi_ssid").value = "";
               document.getElementById("wifi_host").value = "k2.local";
+              document.getElementById("printer_pass").value = "";
             }
             document.getElementById("cDialog").showModal();
             document.activeElement.blur();
@@ -469,7 +531,7 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
         alert("Set a WiFi network before disabling the Access Point, or you may lose access to this device.");
         return;
       }
-      var postdata = "ap_ssid=" + document.getElementById("ap_ssid").value + "&ap_pass=" + document.getElementById("ap_pass").value + "&wifi_ssid=" + document.getElementById("wifi_ssid").value + "&wifi_pass=" + document.getElementById("wifi_pass").value + "&wifi_host=" + document.getElementById("wifi_host").value + "&printer_host=" + document.getElementById("printer_host").value + (document.getElementById("ap_enabled").checked ? "&ap_enabled=1" : "") + "&submit";
+      var postdata = "ap_ssid=" + document.getElementById("ap_ssid").value + "&ap_pass=" + document.getElementById("ap_pass").value + "&wifi_ssid=" + document.getElementById("wifi_ssid").value + "&wifi_pass=" + document.getElementById("wifi_pass").value + "&wifi_host=" + document.getElementById("wifi_host").value + "&printer_host=" + document.getElementById("printer_host").value + "&printer_pass=" + encodeURIComponent(document.getElementById("printer_pass").value) + (document.getElementById("ap_enabled").checked ? "&ap_enabled=1" : "") + "&submit";
       xhrRetry("POST", "/config", postdata, "application/x-www-form-urlencoded",
         function () {
           dialog.close();
@@ -618,6 +680,10 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
       paramStr += "</tr>";
       document.getElementById("param").innerHTML = paramStr;
       document.getElementById("pDialog").showModal();
+      document.activeElement.blur();
+    }
+    function loadUpdate() {
+      document.getElementById("uDialog").showModal();
       document.activeElement.blur();
     }
     var matDbObj = null;
@@ -936,6 +1002,27 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
     function formatBytes(bytes) {
       if (bytes == 0) return '0 Bytes'; var k = 1024, dm = 2, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'], i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
+    function FileSelected(e) {
+      file = document.getElementById('fwfile').files[document.getElementById('fwfile').files.length - 1];
+      if (file.name.toLowerCase().endsWith(".bin")) {
+        var b = file.slice(0, 1);
+        var r = new FileReader(); r.onloadend = function (e) {
+          if (e.target.readyState === FileReader.DONE) {
+            var mb = new Uint8Array(e.target.result);
+            if (parseInt(mb[0]) == 233) {
+              document.getElementById("selfile").innerHTML = "File: " + file.name + "<br>Size: " + formatBytes(file.size) + "<br>Magic byte: 0x" + parseInt(mb[0]).toString(16).toUpperCase();
+              document.getElementById("upload").style.display = "block";
+            } else {
+              document.getElementById("selfile").innerHTML = "<font color='#df3840'>Invalid firmware file</font><br><br>Magic byte is wrong<br>Expected: 0xE9<br>Found: 0x" + parseInt(mb[0]).toString(16).toUpperCase();
+              document.getElementById("upload").style.display = "none";
+            }
+          }
+        }; r.readAsArrayBuffer(b);
+      } else {
+        document.getElementById("selfile").innerHTML = "<font color='#df3840'>Invalid firmware file</font><br><br>File should be a .bin file";
+        document.getElementById("upload").style.display = "none";
+      }
+    }
     function DbFileSelected(e) {
       file = document.getElementById('dbfile').files[document.getElementById('dbfile').files.length - 1];
       if (file.name.toLowerCase() == "material_database.json") {
@@ -945,6 +1032,43 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
         document.getElementById("dselfile").innerHTML = "<font color='#df3840'>Invalid database file</font><br><br>File should be material_database.json";
         document.getElementById("dupload").style.display = "none";
       }
+    }
+    function uploadFile() {
+      if (!file || !file.name.toLowerCase().endsWith(".bin")) return;
+      if (!confirm("Install this ESP32-C6 application firmware? The reader will reboot after a successful update. Back up settings first.")) return;
+      var button = document.getElementById("upload");
+      var select = document.getElementById("btnsel");
+      var status = document.getElementById("status");
+      button.disabled = true;
+      select.disabled = true;
+      status.textContent = "Uploading firmware: 0%";
+      var xhr = new XMLHttpRequest();
+      xhr.timeout = 180000;
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState !== XMLHttpRequest.DONE) return;
+        button.disabled = false;
+        select.disabled = false;
+        if (xhr.status === 200) {
+          status.textContent = xhr.responseText || "Firmware installed. Rebooting...";
+          setTimeout(redirect, 6000);
+        } else {
+          status.textContent = xhr.responseText || "Firmware update failed. The device should continue running its previous firmware.";
+        }
+      };
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) {
+          status.textContent = "Uploading firmware: " + Math.round(100 * e.loaded / e.total) + "%";
+        }
+      };
+      xhr.upload.onload = function () {
+        status.textContent = "Upload received. Validating firmware...";
+      };
+      xhr.ontimeout = function () { status.textContent = "Firmware upload timed out. Check the reader before retrying."; };
+      xhr.onerror = function () { status.textContent = "Connection interrupted. Check the reader before retrying."; };
+      xhr.open("POST", "/update.html", true);
+      var formData = new FormData();
+      formData.append("fwfile", file);
+      xhr.send(formData);
     }
     function downloadCurrentDb() {
       const status = document.getElementById("dstatus");
@@ -1161,6 +1285,11 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
 
 
                 <svg xmlns="http://www.w3.org/2000/svg" height="32px" viewBox="0 0 24 24" width="32px"
+                  onClick="loadUpdate();">
+                  <path
+                    d="M14,2H6C4.9,2,4.01,2.9,4.01,4L4,20c0,1.1,0.89,2,1.99,2H18c1.1,0,2-0.9,2-2V8L14,2z M18,20H6V4h7v5h5V20z M8,15.01 l1.41,1.41L11,14.84V19h2v-4.16l1.59,1.59L16,15.01L12.01,11L8,15.01z" />
+                </svg>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <svg xmlns="http://www.w3.org/2000/svg" height="32px" viewBox="0 0 24 24" width="32px"
                   onClick="dialog.close();">
                   <path d="M0 0h24v24H0z" fill="none" />
                   <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
@@ -1227,6 +1356,13 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
               <input size="10" maxlength="64" type="text" id="printer_host" value="" autocomplete="off">
             </td>
           </tr>
+          <tr>
+            <td>PRINTER SSH PASSWORD:</td>
+            <td>
+              <input size="18" maxlength="128" type="password" id="printer_pass" value="" autocomplete="new-password" placeholder="Leave blank to keep saved password">
+              <small style="display:block;opacity:0.7;line-height:1.4;margin-top:6px;">Stored locally on the reader. Leave blank to retain the previous password. Re-enter after migrating from a firmware with a compiled-in password.</small>
+            </td>
+          </tr>
         </table>
         <div class="mv-action-row mv-settings-actions">
           <input id="savecfg" type="button" class="btn" value="Save Settings" onClick="saveConf();">
@@ -1237,6 +1373,52 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
   <dialog id="pDialog">
     <center>
       <table id="param"></table>
+    </center>
+  </dialog>
+  <dialog id="uDialog">
+    <center>
+      <div class="main">
+        <table>
+          <tr>
+            <td>
+              <br>
+              <label style="display: block;text-align: right;">
+                <svg xmlns="http://www.w3.org/2000/svg" height="32px" viewBox="0 0 24 24" width="32px"
+                  onClick="dialogu.close();">
+                  <path d="M0 0h24v24H0z" fill="none" />
+                  <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+                </svg>
+              </label>
+            </td>
+          </tr>
+          <tr>
+            <th colspan="1" width="300">
+              <center>Firmware Updater</center>
+            </th>
+          </tr>
+          <tr>
+            <td>
+              <form>
+                <center style="width:100%;">
+                  <input id="btnsel" type="button" class="btn" onclick="document.getElementById('fwfile').click()"
+                    value="Select file" style="display:block;">
+                  <small style="display:block;width:100%;max-width:520px;box-sizing:border-box;text-align:center;line-height:1.5;opacity:0.7;margin:10px auto 18px;">Upload the ESP32-C6 application .bin from a release. Requires an OTA-enabled partition layout.</small>
+                </center>
+                <p id="selfile"></p>
+                <input id="fwfile" type="file" name="fwupdate" size="0" accept=".bin" onChange="FileSelected();"
+                  style="width:0; height:0;"></p>
+                <div>
+                  <center>
+                    <p id="status"></p>
+                  </center>
+                  <center><input id="upload" type="button" class="btn" value="Update Firmware" onClick="uploadFile();"
+                      style="display: none;"></center>
+                </div>
+              </form>
+            </td>
+          </tr>
+        </table>
+      </div>
     </center>
   </dialog>
   <dialog id="dDialog">
@@ -1263,28 +1445,24 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
           <tr>
             <td>
               <form>
-                <center><input id="dbtnsel" type="button" class="btn"
-                    onclick="document.getElementById('dbfile').click()" value="Select file" style="display: block;">
-                </center>
-                <small style="display:block;text-align:center;opacity:0.7;margin:10px auto 24px;max-width:520px;">Upload a local material_database.json file to restore the reader database.</small>
-                <p id="dselfile"></p>
-                <input id="dbfile" type="file" name="dbupdate" size="0" accept=".json" onChange="DbFileSelected();"
-                  style="width:0; height:0;"></p>
-                <div>
-                  <center>
-                    <p id="dstatus"></p>
-                  </center>
-                  <center><input id="dupload" type="button" class="btn" value="Update Database" onClick="uploadDb();"
-                      style="display: none;"></center>
-                  <center><input id="ddownload" type="button" class="btn" value="Download Database"
-                      onClick="downloadCurrentDb();">
-                    <small style="display:block;text-align:center;opacity:0.7;margin:10px auto 24px;max-width:520px;">Download the reader's current local material_database.json as a backup.</small>
-                  </center>
-                  <center><input id="pupload" type="button" class="btn" value="Sync From Printer"
-                      onClick="syncLiveFromPrinter('dstatus');" style="display: none;">
-                    <small style="display:block;text-align:center;opacity:0.7;margin:10px auto 16px;max-width:520px;">Pull the live material database directly from the configured printer.</small>
-                  </center>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:24px;padding:12px 12px 18px;">
+                  <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;">
+                    <input id="dbtnsel" type="button" class="btn" onclick="document.getElementById('dbfile').click()" value="Select file" style="display:block;margin:0;">
+                    <small style="display:block;text-align:center;opacity:0.7;line-height:1.5;">Upload a local material_database.json file to restore the reader database.</small>
+                    <p id="dselfile" style="margin:0;text-align:center;"></p>
+                    <input id="dbfile" type="file" name="dbupdate" accept=".json" onChange="DbFileSelected();" style="display:none;">
+                    <input id="dupload" type="button" class="btn" value="Update Database" onClick="uploadDb();" style="display:none;margin:0;">
+                  </div>
+                  <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;">
+                    <input id="ddownload" type="button" class="btn" value="Download Database" onClick="downloadCurrentDb();" style="margin:0;">
+                    <small style="display:block;text-align:center;opacity:0.7;line-height:1.5;">Download the reader's current local material_database.json as a backup.</small>
+                  </div>
+                  <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;">
+                    <input id="pupload" type="button" class="btn" value="Sync From Printer" onClick="syncLiveFromPrinter('dstatus');" style="display:none;margin:0;">
+                    <small style="display:block;text-align:center;opacity:0.7;line-height:1.5;">Pull the live material database directly from the configured printer.</small>
+                  </div>
                 </div>
+                <p id="dstatus" role="status" aria-live="polite" style="text-align:center;overflow-wrap:anywhere;line-height:1.4;margin:12px 18px 20px;"></p>
               </form>
             </td>
           </tr>
@@ -1345,6 +1523,7 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
   <script>
     const dialog = document.getElementById("cDialog");
     const dialogp = document.getElementById("pDialog");
+    const dialogu = document.getElementById("uDialog");
     const dialogd = document.getElementById("dDialog");
     const dialogm = document.getElementById("mDialog");
   </script>

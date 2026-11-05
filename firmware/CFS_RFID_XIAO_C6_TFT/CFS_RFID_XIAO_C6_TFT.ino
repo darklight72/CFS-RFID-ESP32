@@ -51,6 +51,10 @@ AES aes;
 File upFile;
 String upMsg;
 bool saveDbFailed = false;
+static bool fwUpdateActive = false;
+static bool fwUpdateReady = false;
+static size_t fwUpdateBytes = 0;
+static String fwUpdateError = "No firmware upload received.";
 MD5Builder md5;
 
 IPAddress Server_IP(10, 1, 0, 1);
@@ -68,7 +72,7 @@ bool AP_ENABLED = true;
 // through PRINTER_HOSTNAME and is loaded from /config.ini.
 const int   PRINTER_PORT = 22;
 const char *PRINTER_USER = "root";
-const char *PRINTER_PASS = "SET_YOUR_PRINTER_PASSWORD";
+String PRINTER_PASSWORD = "";  // Saved in /config.ini, not embedded in release firmware.
 const int   RAW_SERVER_PORT = 8081;
 const bool  PRINTER_IS_K1 = false;
 const char *REMOTE_DIR_K1 = "/usr/data/creality/userdata/box/";
@@ -479,7 +483,13 @@ static ssh_session openAuthedSession(String &err)
   // Fine for a trusted home LAN; add pinning if this ever leaves that
   // context.
 
-  if (ssh_userauth_password(session, NULL, PRINTER_PASS) != SSH_AUTH_SUCCESS) {
+  if (PRINTER_PASSWORD.isEmpty()) {
+    err = "Printer SSH password not configured. Enter it in Settings.";
+    ssh_disconnect(session);
+    ssh_free(session);
+    return NULL;
+  }
+  if (ssh_userauth_password(session, NULL, PRINTER_PASSWORD.c_str()) != SSH_AUTH_SUCCESS) {
     err = String("auth failed: ") + ssh_get_error(session);
     ssh_disconnect(session);
     ssh_free(session);
@@ -1235,6 +1245,18 @@ void setup()
   webServer.on("/display/transfer",HTTP_POST,handleTftTransfer);
   webServer.on("/display/cache",HTTP_POST,handleDisplayCache);
   webServer.on("/display/resolve",HTTP_POST,handleDisplayResolve);
+  webServer.on("/update.html", HTTP_POST, []() {
+    // Only activate the newly flashed image after the full upload was verified.
+    bool success = fwUpdateReady;
+    webServer.send(success ? 200 : 400, "text/plain",
+                   success ? "Firmware update complete. Rebooting..." : fwUpdateError);
+    if (success) {
+      delay(1200);  // Allow the browser to receive the result.
+      ESP.restart();
+    }
+  }, []() {
+    handleFwUpdate();
+  });
   webServer.on("/updatedb.html", HTTP_POST, []() {
     webServer.send(200, "text/plain", upMsg);
     delay(1000);
@@ -1608,6 +1630,16 @@ void handleConfigP()
     }
     WIFI_HOSTNAME = webServer.arg("wifi_host");
     PRINTER_HOSTNAME = webServer.arg("printer_host");
+    // A blank field means keep the stored credential. Never return passwords
+    // in GET /config; OTA application updates preserve this LittleFS file.
+    if (webServer.hasArg("printer_pass") && webServer.arg("printer_pass").length() > 0) {
+      String newPassword = webServer.arg("printer_pass");
+      if (newPassword.length() > 128 || newPassword.indexOf('\r') >= 0 || newPassword.indexOf('\n') >= 0) {
+        webServer.send(400, "text/plain", "Invalid printer SSH password");
+        return;
+      }
+      PRINTER_PASSWORD = newPassword;
+    }
     // Checkboxes only appear in form data when checked - so treat presence
     // of the arg as "on". Refuse to disable the AP unless WiFi credentials
     // are actually set, so the device can't be locked out of being reachable.
@@ -1616,7 +1648,7 @@ void handleConfigP()
     File file = LittleFS.open("/config.ini", "w");
     if (file)
     {
-      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
+      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
       file.close();
     }
     String htmStr = "OK";
@@ -1727,6 +1759,64 @@ void handleDbUpdate()
       upFile.close();
       upMsg = "Database update complete, Rebooting";
     }
+  }
+}
+
+// Firmware upload writes to an inactive OTA application partition in chunks.
+// It never stages a large binary in LittleFS (which stores user settings/data).
+// A board running the legacy No-OTA partition layout will be rejected safely.
+void handleFwUpdate()
+{
+  HTTPUpload &upload = webServer.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    fwUpdateReady = false;
+    fwUpdateActive = false;
+    fwUpdateError = "Firmware upload did not complete.";
+    fwUpdateBytes = 0;
+
+    if (!upload.filename.endsWith(".bin")) {
+      fwUpdateError = "Select a compiled ESP32-C6 application .bin file.";
+      return;
+    }
+    // UPDATE_SIZE_UNKNOWN writes to the inactive OTA slot. Update.begin()
+    // rejects devices without a suitable OTA partition (including No OTA).
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+      fwUpdateError = String("Cannot start OTA update (error ") + Update.getError()
+                      + "). Check OTA partitions and available app space.";
+      return;
+    }
+    fwUpdateActive = true;
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (!fwUpdateActive) return;
+    if (fwUpdateBytes == 0 && (upload.currentSize == 0 || upload.buf[0] != 0xE9)) {
+      fwUpdateError = "Not a valid ESP32 application image (missing 0xE9 header).";
+      Update.abort();
+      fwUpdateActive = false;
+      return;
+    }
+    size_t written = Update.write(upload.buf, upload.currentSize);
+    if (written != upload.currentSize || Update.hasError()) {
+      fwUpdateError = String("Firmware flash write failed (error ") + Update.getError() + ").";
+      Update.abort();
+      fwUpdateActive = false;
+      return;
+    }
+    fwUpdateBytes += written;
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (!fwUpdateActive) return;
+    fwUpdateActive = false;
+    if (fwUpdateBytes == 0 || !Update.end(true)) {
+      fwUpdateError = String("Firmware validation failed (error ") + Update.getError() + ").";
+      Update.abort();
+      return;
+    }
+    fwUpdateReady = true;
+    fwUpdateError = "";
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    if (fwUpdateActive) Update.abort();
+    fwUpdateActive = false;
+    fwUpdateReady = false;
+    fwUpdateError = "Firmware upload cancelled or connection interrupted.";
   }
 }
 
@@ -1921,6 +2011,10 @@ void loadConfig()
         PRINTER_HOSTNAME = split(iniData, "PRINTER_HOST=", "\r\n");
         PRINTER_HOSTNAME.trim();
       }
+      if (instr(iniData, "PRINTER_PASS="))
+      {
+        PRINTER_PASSWORD = split(iniData, "PRINTER_PASS=", "\r\n");
+      }
 
 
       if (instr(iniData, "AP_ENABLED="))
@@ -1937,7 +2031,7 @@ void loadConfig()
     File file = LittleFS.open("/config.ini", "w");
     if (file)
     {
-      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
+      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
       file.close();
     }
   }
