@@ -1,7 +1,7 @@
 // CFS RFID + Creality Printer Push Agent - single-board XIAO ESP32-C6 merge
-// Release baseline: v1.0.0 (same operating logic as tested v0.3.9)
-// v0.1 proof build generated from the user's working Spool_ID RFID firmware
-// and working K2_Push_Agent firmware.
+// Firmware version: v1.0.1
+// Database Updater fixes, UI improvements and legacy updater removal.
+// RFID and printer database transfer logic unchanged.
 //
 // AP mode remains explicitly controlled by AP_ENABLED in the web settings.
 // The second-board C6 hostname setting has been removed; browser sync/push
