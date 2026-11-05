@@ -8,6 +8,8 @@ Built around the **Seeed Studio XIAO ESP32-C6**, an **RC522 RFID reader**, and a
 
 > **Security warning — local network only:** This firmware is intended for use on a **trusted local network**, not the public internet. The web interface (port **80**) and printer-transfer service (port **8081**) do not currently provide a verified authentication/access-control layer for sensitive operations. **Do not port-forward either service, place the ESP32 in a public-facing reverse proxy, or expose it to untrusted networks.** Anyone able to connect to the device may be able to alter configuration, initiate RFID operations or trigger printer database transfers. Use an isolated/trusted Wi-Fi network, change the default AP password, and keep printer credentials private. See [Security notes](docs/SECURITY.md).
 
+> **Printer SSH password compatibility ([Issue #2](https://github.com/gavrd7/CFS-RFID-ESP32/issues/2)):** A contributor reported LibSSH-ESP32 authentication failures with a backslash (`\`) in the printer root password. However, a separate K2 test successfully connected and pulled the material database with a trailing backslash. This is **not a universal restriction**. See the [installation guide](docs/INSTALL.md#4-open-and-configure-the-firmware) for C++ escaping and troubleshooting.
+
 ![Finished CFS RFID device](images/rfid-printer.JPG)
 
 > **Version 1.0.0 — feature-complete baseline.**

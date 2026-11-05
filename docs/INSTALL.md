@@ -93,6 +93,8 @@ What these mean:
 
 The public-safe sketch also contains `PRINTER_PASS = "SET_YOUR_PRINTER_PASSWORD"`. Printer SSH details must be configured separately before using printer sync/push. **Don't copy credentials into a public GitHub commit** or publish screenshots showing them.
 
+> **Printer SSH password compatibility ([Issue #2](https://github.com/gavrd7/CFS-RFID-ESP32/issues/2)):** A contributor reported LibSSH-ESP32 authentication failures with a backslash (`\`) in the root password, even though their diagnostic reported the correct `0x5C` byte reaching the library. A separate K2 test successfully connected and pulled the material database with a trailing backslash, so this is **not a universal restriction**. In C++ source, each literal backslash must be escaped as `\\` (for example, the source string `"example\\"` represents a password ending in one backslash). If authentication fails, verify the compiled bytes and printer SSH configuration. This applies only to printer SSH credentials, not Wi-Fi or AP passwords.
+
 **Settings stored on the board can override the sketch's starting defaults.** When troubleshooting an existing device, check the web configuration and stored `/config.ini` values as well.
 
 ## 5. Choose Arduino upload settings
