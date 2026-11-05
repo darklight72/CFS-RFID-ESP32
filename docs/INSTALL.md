@@ -4,7 +4,7 @@ This guide is for building and setting up the CFS RFID reader for the first time
 
 **Start here:** [Project overview and photos](../README.md) · [Wiring diagram (PDF)](Wiring_Reference.pdf) · [Printable enclosure](../enclosure_stls/) · [Security notes](SECURITY.md)
 
-> **Before you start:** The v1.0.0 release baseline uses the feature-complete, locally tested v0.3.9 implementation with no changes to RFID or printer/database logic. This repository contains public-safe source with placeholder credentials; you must set your own access-point password and printer settings. This sanitised source package has not yet been separately verified in a clean install.
+> **Before you start (v1.0.1):** This maintenance release builds on the v1.0.0 baseline, fixes the Database Updater interface, preserves manual JSON recovery and removes the obsolete web firmware updater. RFID operations and the established printer SSH/SCP/database transfer routines are unchanged. The public-safe source contains placeholder credentials; configure your own access-point and printer settings.
 
 ## 1. Collect the parts
 
@@ -117,7 +117,9 @@ Click **Verify** (✓) to compile first. If successful, click **Upload**. Watch 
 
 **Important for existing devices:** the sketch calls `LittleFS.begin(true)`, which means a LittleFS mount failure can result in formatting the filesystem. Do not assume `Erase All Flash: Disabled` guarantees stored configuration survives every failure or partition-layout change. Back up settings before reflashing or changing partition schemes.
 
-The firmware's **No OTA** partition scheme means the normal update method is **USB upload**. You do not normally need a separate LittleFS filesystem image upload because the web interface is embedded in the sketch.
+**v1.0.1 firmware updating:** Use **USB and Arduino IDE** to upload this release. The older web Firmware Updater page and `/update.html` endpoint were intentionally removed because the legacy flashing method was not validated. The replacement OTA updater in [PR #4](https://github.com/gavrd7/CFS-RFID-ESP32/pull/4) is separate and is **not part of v1.0.1**. Do not use its custom OTA partition instructions for this release. The current **No OTA** partition layout does not support web OTA updates.
+
+You do not normally need a separate LittleFS filesystem image upload because the web interface is embedded in the sketch.
 
 ## 6. Connect to the web interface
 
@@ -165,10 +167,12 @@ You do **not** need printer connectivity to get the reader, TFT and web interfac
 
 When ready, configure a compatible Creality printer's address and SSH access. This project has been developed around Creality printer material-database workflows; paths and permissions can differ by printer model or firmware.
 
-The web interface has two separate manual actions:
+The web interface provides these separate manual actions:
 
-- **Sync / Download:** retrieve the printer's material data.
-- **Push / Upload:** send updated material information back to the printer.
+- **Database Updater → Select file / Update Database:** upload a local `material_database.json` to restore the reader’s material database. This remains available for recovery.
+- **Database Updater → Sync From Printer:** retrieve the live material database directly from the configured printer using the existing SSH/SCP-backed sync function.
+- **Material Database → Sync Live From Printer:** the same printer retrieval operation, also accessible where you edit materials.
+- **Material Database → Push to Printer:** send edited material information back to the printer after reviewing changes.
 
 **Back up your printer's material database before your first push.** A bad or incomplete transfer could damage printer configuration. Avoid experimenting with database writes on a production printer. The transfer and validation routines are intentionally kept unchanged from the tested firmware.
 
