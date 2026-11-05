@@ -946,6 +946,35 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
         document.getElementById("dupload").style.display = "none";
       }
     }
+    function downloadCurrentDb() {
+      const status = document.getElementById("dstatus");
+      status.style.color = "";
+      status.textContent = "Preparing local database download...";
+      // Read the reader's current LittleFS database, not the printer DB or a
+      // potentially stale browser-side copy. No writes or printer operations.
+      fetch("/material_database.json", { cache: "no-store" })
+        .then(async response => {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          const data = await response.blob();
+          if (!data.size) throw new Error("Local database is empty");
+          return data;
+        })
+        .then(data => {
+          const url = URL.createObjectURL(data);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "material_database.json";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          status.textContent = "Local database download started.";
+        })
+        .catch(error => {
+          status.style.color = "#df3840";
+          status.textContent = "Unable to download local database: " + error.message;
+        });
+    }
     function uploadDb() {
       document.getElementById("dupload").style.display = "none";
       document.getElementById("dbtnsel").style.display = "none";
@@ -1247,6 +1276,10 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
                   </center>
                   <center><input id="dupload" type="button" class="btn" value="Update Database" onClick="uploadDb();"
                       style="display: none;"></center>
+                  <center><input id="ddownload" type="button" class="btn" value="Download Database"
+                      onClick="downloadCurrentDb();">
+                    <small style="display:block;text-align:center;opacity:0.7;margin:10px auto 24px;max-width:520px;">Download the reader's current local material_database.json as a backup.</small>
+                  </center>
                   <center><input id="pupload" type="button" class="btn" value="Sync From Printer"
                       onClick="syncLiveFromPrinter('dstatus');" style="display: none;">
                     <small style="display:block;text-align:center;opacity:0.7;margin:10px auto 16px;max-width:520px;">Pull the live material database directly from the configured printer.</small>
