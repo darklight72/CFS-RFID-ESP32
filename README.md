@@ -12,7 +12,7 @@ Built around the **Seeed Studio XIAO ESP32-C6**, an **RC522 RFID reader**, and a
 
 ![Finished CFS RFID device](images/rfid-printer.JPG)
 
-> **Version 1.0.0 — feature-complete baseline.**
+> **Version 1.0.1 — database updater maintenance release.** This release preserves manual database recovery and removes the obsolete firmware updater. The core RFID and printer transfer logic remains unchanged.
 
 ## What can it do?
 
@@ -76,6 +76,10 @@ Use an expendable tag when first learning the write process. Writing incorrect d
 ## Printer sync and push
 
 The web interface also has separate actions to **sync/download material data from the printer** and **push/upload entries to the printer**.
+
+**Database Updater (v1.0.1):** Use **Select file** and **Update Database** to restore the reader’s local database from a `material_database.json` file. Alternatively, **Sync From Printer** retrieves the current material database directly from your configured printer using the same established sync operation as the Material Database page. Both options are manual, and their buttons include short explanations.
+
+**Firmware updates:** The obsolete web firmware updater and its upload endpoint have been removed in v1.0.1. For this release, flash firmware over **USB using Arduino IDE**. A replacement browser-based OTA updater is being developed separately in [PR #4](https://github.com/gavrd7/CFS-RFID-ESP32/pull/4) and is **not included** in v1.0.1.
 
 **These are manual actions, not automatic background synchronisation.** Back up the printer's material database before your first push, and avoid testing database writes on a production printer until you understand the recovery process.
 
