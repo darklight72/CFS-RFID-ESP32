@@ -35,6 +35,12 @@ You can also manage filament records and review printer transfers:
 | --- | --- |
 | ![Filament material database](screenshots/web-ui-material-database.PNG) | ![Printer sync page](screenshots/web-ui-sync.PNG) |
 
+## Other ESP32-C6 development boards (community / experimental)
+
+The **Seeed XIAO ESP32-C6 remains the officially tested reference board**. Other ESP32-C6 variants may work with suitable SPI/GPIO wiring, flash capacity, and board-specific boot/antenna handling, but they are **not yet hardware verified**.
+
+Releases continue to provide **precompiled OTA firmware for XIAO only**. For other boards, use the separate **`CFS-RFID-ESP32C6-Generic-Source-<version>.zip`** package: an Arduino sketch with the generic profile enabled and **GPIOs pre-filled with the XIAO's tested assignments**. Beginners can keep those values **if their exact board exposes the same GPIOs and the peripherals are wired accordingly**; otherwise, edit `board_config.h` using the provided mapping table. Check the board model, pin availability and 4MB flash/partition compatibility, then compile and upload over USB. **Do not flash the XIAO OTA .bin on another board.** Full instructions: [Generic ESP32-C6 setup](docs/GENERIC_ESP32C6.md).
+
 ## What you'll need
 
 - A **Seeed Studio XIAO ESP32-C6** microcontroller

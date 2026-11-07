@@ -54,7 +54,9 @@ jobs:
       - name: Package application binary, sketch, and checksums
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          trap 'echo "::error file=.github/workflows/firmware-release.yml::Packaging failed at line ${LINENO}: ${BASH_COMMAND}"' ERR
+          set -x
           mkdir -p dist/release
           # Verify the emitted partition binary includes both OTA app
           # partitions and LittleFS storage before publishing any image.
@@ -97,15 +99,41 @@ jobs:
 
           cp "$binary" "dist/release/CFS-RFID-XIAO-ESP32C6-OTA.bin"
           zip -qr "dist/release/CFS-RFID-ESP32-${version}-Arduino.zip" firmware/CFS_RFID_XIAO_C6_TFT
+
+          # Extra editable source-only package for untested ESP32-C6 boards.
+          # Prefill the XIAO's tested pin assignments as editable defaults;
+          # do not compile, sign, or publish a generic OTA binary.
+          mkdir -p dist/generic-source
+          cp -R firmware/CFS_RFID_XIAO_C6_TFT dist/generic-source/
+          cp docs/GENERIC_ESP32C6.md dist/generic-source/README-GENERIC-ESP32C6.md
+          cp docs/INSTALL.md docs/SECURITY.md dist/generic-source/
+          generic_config="dist/generic-source/CFS_RFID_XIAO_C6_TFT/board_config.h"
+          sed -i 's/^#define CFS_BOARD_XIAO_ESP32C6     1$/#define CFS_BOARD_XIAO_ESP32C6     0/' "$generic_config"
+          sed -i 's/^#define CFS_BOARD_GENERIC_ESP32C6  0$/#define CFS_BOARD_GENERIC_ESP32C6  1/' "$generic_config"
+          grep -qx '#define CFS_BOARD_XIAO_ESP32C6     0' "$generic_config"
+          grep -qx '#define CFS_BOARD_GENERIC_ESP32C6  1' "$generic_config"
+          grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+19$' "$generic_config"
+          (cd dist/generic-source && zip -qr "../release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip" .)
+          # Verify the public source archive is not accidentally a XIAO build.
+          # Avoid grep -q pipe early-exit/SIGPIPE under 'set -o pipefail'.
+          generic_zip="dist/release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip"
+          unzip -t "$generic_zip"
+          unzip -p "$generic_zip" CFS_RFID_XIAO_C6_TFT/board_config.h > dist/generic-config-check.h
+          grep -qx '#define CFS_BOARD_GENERIC_ESP32C6  1' dist/generic-config-check.h
+          grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+19$' dist/generic-config-check.h
+          unzip -Z -1 "$generic_zip" > dist/generic-zip-entries.txt
+          grep -qx 'README-GENERIC-ESP32C6.md' dist/generic-zip-entries.txt
+          echo "Generic source package validated: $generic_zip"
+
           cp docs/Wiring_Reference.pdf "dist/release/CFS-RFID-ESP32-${version}-Wiring.pdf"
           zip -qr dist/release/enclosure_stls.zip enclosure_stls
 
-          # Publish checksums for all four assets, not just firmware files.
+          # Publish SHA-256 checksums for all five downloadable assets.
           (cd dist/release && sha256sum *.bin *.zip *.pdf > SHA256SUMS.txt)
 
           echo "Release bundle contents:"
           ls -lh dist/release/
-          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 5
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 6
       - uses: actions/upload-artifact@v4
         with:
           name: CFS-RFID-ESP32C6-firmware
@@ -155,6 +183,7 @@ jobs:
 
             - `CFS-RFID-XIAO-ESP32C6-OTA.bin` — application image for the new web updater
             - `CFS-RFID-ESP32-${{ github.ref_name }}-Arduino.zip` — Arduino sketch, including OTA partition table
+            - `CFS-RFID-ESP32C6-Generic-Source-${{ github.ref_name }}.zip` — editable, untested ESP32-C6 source (no compiled binary)
             - `CFS-RFID-ESP32-${{ github.ref_name }}-Wiring.pdf` — wiring reference
             - `enclosure_stls.zip` — printable enclosure parts and 3MF
             - `SHA256SUMS.txt` — checksums for all downloads
