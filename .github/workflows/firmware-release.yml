@@ -119,7 +119,7 @@ jobs:
 
           # The C6 generic profile is the #else of CFS_BOARD_XIAO_ESP32C6.
           c6_config="dist/generic-c6-source/CFS_RFID_XIAO_C6_TFT/board_config.h"
-          sed -i -E 's/^([[:space:]]*#define[[:space:]]+CFS_BOARD_XIAO_ESP32C6[[:space:]]+)1$/\\10/' "$c6_config"
+          sed -i -E '/^[[:space:]]*#define[[:space:]]+CFS_BOARD_XIAO_ESP32C6[[:space:]]+1$/s/1$/0/' "$c6_config"
           grep -Eq '^[[:space:]]*#define[[:space:]]+CFS_BOARD_XIAO_ESP32C6[[:space:]]+0$' "$c6_config"
           grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+19$' "$c6_config"
           (cd dist/generic-c6-source && zip -qr "../release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip" .)
