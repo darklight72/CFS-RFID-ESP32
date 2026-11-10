@@ -1,8 +1,8 @@
-# CFS RFID — ESP32-C6 Reader & Writer
+# CFS RFID — ESP32-C6 / ESP32-S3 Reader & Writer
 
 **Read and write Creality CFS-compatible filament RFID tags using a small, standalone device with a screen and web interface.** You can also manage filament entries and manually transfer material data to and from a compatible Creality printer.
 
-Built around an **ESP32-C6 development board**, an **RC522 RFID reader**, and a **1.54-inch ST7789 colour display**. The **Seeed Studio XIAO ESP32-C6** is the tested reference hardware; other ESP32-C6 boards can use the [configurable generic Arduino sketch](docs/GENERIC_ESP32C6.md).
+Built around an **ESP32-C6 or ESP32-S3 development board**, an **RC522 RFID reader**, and a **1.54-inch ST7789 colour display**. The **Seeed Studio XIAO ESP32-C6** remains the project's hardware-tested reference board. Other ESP32-C6 boards can use the [generic Arduino source](docs/GENERIC_ESP32C6.md), while **ESP32-S3 Super Mini and ESP32-S3-Zero** support was contributed and physically tested by [darklight72](https://github.com/darklight72) ([PR #6](https://github.com/gavrd7/CFS-RFID-ESP32/pull/6)).
 
 > **Based on DnG-Crafts/K2-RFID:** This implementation adds an ESP32-C6-based single-board design (developed and tested on the XIAO), TFT interface, updated web UI and printer integration. The original Arduino project is credited to **[DnG-Crafts/K2-RFID](https://github.com/DnG-Crafts/K2-RFID)**.
 
@@ -21,7 +21,7 @@ Built around an **ESP32-C6 development board**, an **RC522 RFID reader**, and a 
 - **Choose filament details:** Select an existing filament or create a custom entry using the web interface.
 - **See information on the screen:** The TFT shows material names, filament colours, tag status and confirmations.
 - **Sync with a printer:** Use the web interface to manually download material information from your printer or send updated entries back to it.
-- **Run from one board:** The reader, screen, web interface and printer connection all run on an ESP32-C6 board. The XIAO is hardware-tested; [generic ESP32-C6 builds](docs/GENERIC_ESP32C6.md) are experimental.
+- **Run from one board:** The reader, screen, web interface and printer connection run on a compatible ESP32-C6 or ESP32-S3 board. See the [C6](docs/GENERIC_ESP32C6.md) and [S3](docs/ESP32_S3.md) hardware guides for board-specific setup.
 
 ### A look at the web interface
 
@@ -35,15 +35,17 @@ You can also manage filament records and review printer transfers:
 | --- | --- |
 | ![Filament material database](screenshots/web-ui-material-database.PNG) | ![Printer sync page](screenshots/web-ui-sync.PNG) |
 
-## Other ESP32-C6 development boards (community / experimental)
+## Alternative ESP32-C6 and ESP32-S3 boards
 
 The **Seeed XIAO ESP32-C6 remains the officially tested reference board**. Other ESP32-C6 variants may work with suitable SPI/GPIO wiring, flash capacity, and board-specific boot/antenna handling, but they are **not yet hardware verified**.
 
 Releases provide **precompiled OTA firmware for the tested XIAO board only**. For other boards, download **`CFS-RFID-ESP32C6-Generic-Source-<version>.zip`**, which contains an editable Arduino sketch with the generic profile enabled and **the tested XIAO GPIO assignments pre-populated**. Keep those defaults if your board exposes the same GPIO numbers and the peripherals are wired accordingly; otherwise adjust `board_config.h` using the pin-mapping guide. Verify your board's reserved pins, flash capacity and partition compatibility, then compile and upload via USB. **Do not flash the XIAO OTA `.bin` to another board.** See [Generic ESP32-C6 setup](docs/GENERIC_ESP32C6.md).
 
+**ESP32-S3 Super Mini / Zero:** [darklight72](https://github.com/darklight72) contributed and reported hardware testing for RFID read/write, printer database read/write, OTA, networking and TFT operation on both S3 boards ([PR #6](https://github.com/gavrd7/CFS-RFID-ESP32/pull/6)). Releases provide a separate **`CFS-RFID-ESP32S3-SuperMini-Zero-Source-<version>.zip`** with editable source and preconfigured S3 GPIOs, not a precompiled S3 firmware binary. Select an appropriate ESP32-S3 board target in Arduino IDE and follow the [ESP32-S3 wiring and installation guide](docs/ESP32_S3.md). Other S3 variants may need different pins or flash configuration.
+
 ## What you'll need
 
-- An **ESP32-C6 development board** — **Seeed Studio XIAO ESP32-C6** (tested reference), or another ESP32-C6 board using the [generic source package](docs/GENERIC_ESP32C6.md) (experimental)
+- An **ESP32-C6 or ESP32-S3 development board** — Seeed XIAO ESP32-C6 (tested reference), another [ESP32-C6](docs/GENERIC_ESP32C6.md), or an [ESP32-S3 Super Mini / Zero](docs/ESP32_S3.md) using its source-only build
 - An **MFRC522 / RC522** RFID reader
 - A **1.54-inch ST7789 240 × 240 SPI TFT** screen
 - Suitable wires, a USB cable and a power source
@@ -59,11 +61,11 @@ For the pin-by-pin connections, see the **[wiring reference (PDF)](docs/Wiring_R
 
 This is the short version for getting started. **Follow the [full installation guide](docs/INSTALL.md)** for library requirements, wiring and first-time setup.
 
-1. **Assemble the hardware.** Connect the ESP32-C6 board, RC522 and TFT. The [wiring reference](docs/Wiring_Reference.pdf) shows the tested XIAO connections; for another board, compare the GPIO numbers against its pinout and follow the [generic board guide](docs/GENERIC_ESP32C6.md). Check the display module's supply and backlight requirements.
+1. **Assemble the hardware.** Connect the board, RC522 and TFT. The [wiring PDF](docs/Wiring_Reference.pdf) covers the tested XIAO; for other boards follow the [generic C6](docs/GENERIC_ESP32C6.md) or [S3](docs/ESP32_S3.md) wiring tables. Check the display module's supply and backlight requirements.
 2. **Install Arduino IDE and the ESP32 board package.** Install the external libraries listed in the [install guide](docs/INSTALL.md).
-3. **Open the sketch:** `firmware/CFS_RFID_XIAO_C6_TFT/CFS_RFID_XIAO_C6_TFT.ino` for the XIAO, or the same sketch folder from the **Generic Source** release ZIP for another ESP32-C6 board. The sketch filename retains its original XIAO name for compatibility.
+3. **Open the sketch:** `firmware/CFS_RFID_XIAO_C6_TFT/CFS_RFID_XIAO_C6_TFT.ino` for the XIAO, or the corresponding **C6 Generic Source** / **S3 Source** ZIP from the release. The sketch folder retains its original XIAO name for compatibility.
 4. **Enter your own settings.** Review the placeholder Wi-Fi, access point and printer settings in the sketch. Do not put private passwords into a public GitHub commit.
-5. **Select the board and upload.** For the tested XIAO, select **XIAO_ESP32C6**, **4 MB flash** and **USB CDC On Boot: Enabled** in Arduino IDE. For another ESP32-C6 board, select its matching board definition and verify the generic `board_config.h` GPIOs. The supplied **`partitions.csv` dual-OTA layout is designed for 4 MB flash**; confirm compatibility before flashing. Upload over USB first (back up existing reader data). Subsequent OTA uploads must use a firmware image **built for that exact board and partition layout**; the published XIAO `.bin` is for XIAO only.
+5. **Select the board and upload.** For the tested XIAO, select **XIAO_ESP32C6**, **4 MB flash**, and **USB CDC On Boot: Enabled**. For other C6 and S3 boards, select the appropriate board target and verify the [C6](docs/GENERIC_ESP32C6.md) or [S3](docs/ESP32_S3.md) pin mappings. The supplied **dual-OTA `partitions.csv` is for 4 MB flash**; check compatibility before flashing. Upload over USB first and back up any existing data. Later OTA updates require a binary **built for the exact board and partition layout**; the published XIAO `.bin` is only for XIAO C6.
 6. **Connect and test.** Open Serial Monitor at **115200 baud**, connect to the device using its configured network settings, and open the web interface. Start with a **read test** on a known tag before attempting to write.
 
 **Important:** If you're updating an already configured board, keep **Erase All Flash disabled** to avoid unnecessarily wiping stored settings. See the installation guide for LittleFS considerations.
@@ -86,7 +88,7 @@ Use an expendable tag when first learning the write process. Writing incorrect d
 **Printer SSH credentials after OTA:** Precompiled GitHub Actions binaries do not contain your private printer root password. Enter it once under **Settings → Printer SSH Password** and save. It is stored in the reader’s LittleFS `/config.ini` and was confirmed to survive a subsequent OTA update, along with the local material database. A blank password field retains the saved password; the Settings page does not reveal it. If you previously compiled the password into the sketch, you must enter it again once after upgrading to this release. Credentials are stored as plaintext and the settings interface uses unauthenticated HTTP; use a trusted, isolated LAN only.
 
 
-On the **tested XIAO**, once the **dual-OTA partition layout** is installed over USB, **Settings → Firmware Updater** accepts the compatible **`CFS-RFID-XIAO-ESP32C6-OTA.bin`** application image from a successful GitHub Actions build or tagged release. On other ESP32-C6 boards, build firmware for the specific board; **do not use the published XIAO OTA binary**. These *subsequent* OTA updates normally leave the separate LittleFS data partition untouched. Hardware tests confirmed successful OTA flashing/reboot, printer reconnection, custom-tag reading, database restoration by printer sync and password persistence across updates. The release workflow packages the **XIAO OTA binary**, XIAO Arduino sketch ZIP, separate **generic ESP32-C6 source-only ZIP**, XIAO wiring PDF, XIAO enclosure files and SHA-256 checksums.
+On the **tested XIAO**, once the **dual-OTA partition layout** is installed over USB, **Settings → Firmware Updater** accepts the compatible **`CFS-RFID-XIAO-ESP32C6-OTA.bin`** application image from a successful GitHub Actions build or tagged release. On other ESP32-C6 or ESP32-S3 boards, build firmware for the specific board; **do not use the published XIAO OTA binary**. These *subsequent* OTA updates normally leave the separate LittleFS data partition untouched. Hardware tests confirmed successful OTA flashing/reboot, printer reconnection, custom-tag reading, database restoration by printer sync and password persistence across updates. The release workflow packages the **XIAO OTA binary**, XIAO Arduino sketch ZIP, separate **generic ESP32-C6** and **ESP32-S3 Super Mini / Zero source-only ZIPs**, XIAO wiring PDF, XIAO enclosure files and SHA-256 checksums.
 
 **USB recovery remains essential:** Web OTA cannot change the partition table, and there is no guaranteed automatic rollback. See the [OTA migration and upload instructions](docs/INSTALL.md#moving-an-existing-reader-to-web-firmware-updates).
 
@@ -106,7 +108,7 @@ The web interface also has separate actions to **sync/download material data fro
 
 ## 3D-printable enclosure
 
-You can print the same case used for the **tested XIAO build**. The files are in **[enclosure_stls/](enclosure_stls/)**, including individual STL parts and a ready-to-print 3MF project. **The provided enclosure is designed for the XIAO; other ESP32-C6 development boards may need a different enclosure or mounting adaptation.**
+You can print the same case used for the **tested XIAO build**. The files are in **[enclosure_stls/](enclosure_stls/)**, including individual STL parts and a ready-to-print 3MF project. **The provided enclosure is designed for the XIAO; other ESP32-C6 and ESP32-S3 development boards may need a different enclosure or mounting adaptation.**
 
 ![Finished reader enclosure](images/home-screen.JPG)
 
@@ -136,13 +138,16 @@ You can print the same case used for the **tested XIAO build**. The files are in
 ## Guides and reference
 
 - **[Full installation guide](docs/INSTALL.md)** — software dependencies, Arduino settings and first tests for the tested XIAO
-- **[Generic ESP32-C6 board guide](docs/GENERIC_ESP32C6.md)** — configurable GPIO mapping and source-only installation for other development boards
+- **[Generic ESP32-C6 board guide](docs/GENERIC_ESP32C6.md)** — configurable GPIO mapping and source-only installation for other C6 boards
+- **[ESP32-S3 installation and wiring](docs/ESP32_S3.md)** — contributor-tested Super Mini / Zero pin mapping, Arduino settings, and source-only builds
 - **[Wiring reference](docs/Wiring_Reference.pdf)** — tested XIAO board-to-board connections
 - **[Security notes](docs/SECURITY.md)** — credentials, network access and safe printer testing
 - **[Project origin and licensing](docs/UPSTREAM_AND_LICENSE.md)** — upstream credits and outstanding permissions
 - **[Firmware change history](docs/history/)** — earlier development notes
 
 ## Credits and licence status
+
+**ESP32-S3 support:** Thanks to [darklight72](https://github.com/darklight72) for [PR #6](https://github.com/gavrd7/CFS-RFID-ESP32/pull/6), including Super Mini / Zero hardware validation, GPIO wiring, printer-transfer and OTA testing. See the [ESP32-S3 guide](docs/ESP32_S3.md) for the contributor's test configuration.
 
 **Licensing:** [AGPL-3.0-only](LICENSE) applies **only to original contributions that this project's author owns** (including original documentation and enclosure designs). It does **not** cover inherited DnG-Crafts Arduino code, bundled third-party sources or Creality logos. See [LICENSE-SCOPE.md](LICENSE-SCOPE.md) for the exact boundaries and [upstream licensing notes](docs/UPSTREAM_AND_LICENSE.md) for outstanding permissions. **Do not assume the complete firmware is AGPL-licensed.**
 
