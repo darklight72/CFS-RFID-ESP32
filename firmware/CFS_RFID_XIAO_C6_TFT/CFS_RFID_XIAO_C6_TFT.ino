@@ -300,7 +300,8 @@ static void screenStatus(const String &mode) {
 static void screenInit() {
   // The working standalone test initialized RC522 before this display.
   digitalWrite(RFID_SS_PIN,HIGH);
-  tft.init(240,240);tft.setRotation(0);
+  tft.init(240,240);
+  tft.setRotation(0);
   displayReady=true;displayDirty=true;drawDisplay();
   uint8_t ver=mfrc522.PCD_ReadRegister(MFRC522::VersionReg);
   uint8_t tx=mfrc522.PCD_ReadRegister(MFRC522::TxControlReg);
@@ -1126,7 +1127,9 @@ void setup()
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println("CFS RFID + Printer Push Agent booting on XIAO ESP32-C6...");
+  Serial.println("CFS RFID + Printer Push Agent booting on ");
+  Serial.print(BOARD_NAME);
+  Serial.println("...");
 
   selectAntenna();
   LittleFS.begin(true);
