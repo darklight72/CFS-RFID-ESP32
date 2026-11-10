@@ -1,4 +1,4 @@
-# Installation guide — CFS RFID ESP32-C6
+# Installation guide — CFS RFID ESP32-C6 / ESP32-S3
 
 This guide covers first-time setup and migration to OTA-capable firmware. You will need to **assemble and wire the electronics**, install Arduino software and use **USB for the first flash**. Once the dual-OTA partition layout is installed, later compatible application updates can be uploaded through the reader’s web interface.
 
@@ -8,13 +8,13 @@ This guide covers first-time setup and migration to OTA-capable firmware. You wi
 
 ## Board compatibility
 
-This guide and wiring table use the **hardware-tested Seeed XIAO ESP32-C6**. For other ESP32-C6 variants, use the **Generic Source** ZIP (source only; no precompiled generic firmware) and follow [Generic ESP32-C6 setup](GENERIC_ESP32C6.md) instead of copying XIAO GPIO numbers. The generic package includes **pre-populated GPIO numbers matching the tested XIAO wiring**. Before flashing, compare them against your board's pinout and connections; change only those that differ in `board_config.h`. Check the actual board selection and flash/OTA partition layout as well. No GPIO editing is needed if the defaults really match your hardware. **Never flash the XIAO OTA binary on an unverified board.**
+This guide's detailed wiring table and primary upload settings use the **hardware-tested Seeed XIAO ESP32-C6**. For the contributor-tested **ESP32-S3 Super Mini and ESP32-S3-Zero**, follow the dedicated [ESP32-S3 installation and wiring guide](ESP32_S3.md), which includes the pinout, Arduino settings and contribution credit to [darklight72](https://github.com/darklight72) ([PR #6](https://github.com/gavrd7/CFS-RFID-ESP32/pull/6)). For other ESP32-C6 variants, use the **Generic Source** ZIP (source only; no precompiled generic firmware) and follow [Generic ESP32-C6 setup](GENERIC_ESP32C6.md) instead of copying XIAO GPIO numbers. The generic package includes **pre-populated GPIO numbers matching the tested XIAO wiring**. Before flashing, compare them against your board's pinout and connections; change only those that differ in `board_config.h`. Check the actual board selection and flash/OTA partition layout as well. No GPIO editing is needed if the defaults really match your hardware. **Never flash the XIAO OTA binary on a non-XIAO board, including an ESP32-S3.**
 
 ## 1. Collect the parts
 
 | Part | Purpose |
 | --- | --- |
-| **Seeed Studio XIAO ESP32-C6** | Main controller for the reader, screen, web interface and printer connection |
+| **Seeed Studio XIAO ESP32-C6** | Hardware-tested reference controller for the reader, screen, web interface and printer connection. Other C6 and S3 board options are described in the linked board-specific guides. |
 | **MFRC522 / RC522 RFID module** | Reads and writes compatible RFID tags |
 | **1.54-inch ST7789 SPI TFT, 240 × 240** | Colour status display |
 | Jumper wires / suitable soldered connections | Connects the boards |
@@ -52,7 +52,7 @@ The enclosure includes a front shell, back shell, screen retainer, optional XIAO
 2. In Arduino IDE, open **File → Preferences** (or the equivalent preferences menu).
 3. In **Additional Boards Manager URLs**, ensure the Espressif ESP32 boards package index is configured using the official [Espressif Arduino-ESP32 instructions](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html).
 4. Open **Tools → Board → Boards Manager**, search for **esp32**, and install **esp32 by Espressif Systems**. The working project used an ESP32 Arduino core from the **3.3.x** series.
-5. Connect the XIAO with a **USB data cable**, not a charge-only cable. Select the XIAO board under **Tools → Board**, then select the serial port under **Tools → Port**.
+5. Connect the development board with a **USB data cable**, not a charge-only cable. Select the **appropriate board definition** under **Tools → Board** (XIAO ESP32-C6 for the reference device, ESP32-S3 for the S3 variants), then select the serial port under **Tools → Port**.
 
 If you cannot see the board or port, try another data cable and check that the correct ESP32 package is installed.
 
@@ -63,7 +63,7 @@ In Arduino IDE open **Tools → Manage Libraries** (or **Sketch → Include Libr
 - **Adafruit GFX Library**
 - **Adafruit ST7735 and ST7789 Library**
 
-The project also requires **libssh_esp32**, including its compatible **libssh** headers/dependencies, for its printer connection. This dependency is **not bundled** with the repository. Use a version compatible with your ESP32 Arduino core and the XIAO ESP32-C6. A precise tested release/source has not yet been pinned in this repository, so a fresh build may need dependency troubleshooting.
+The project also requires **libssh_esp32**, including its compatible **libssh** headers/dependencies, for its printer connection. This dependency is **not bundled** with the repository. Use a version compatible with the selected ESP32 Arduino core and board. GitHub Actions currently builds using **ESP32 core 3.3.3** and **LibSSH-ESP32 5.10.0**; use these versions as a reference if local builds encounter dependency issues.
 
 **Do not install a second copy of MFRC522 or AES over the project sources:** the sketch already includes those sources inside `firmware/CFS_RFID_XIAO_C6_TFT/src/`.
 
@@ -103,6 +103,8 @@ What these mean:
 
 ## 5. Choose Arduino upload settings
 
+The table below is for the **XIAO ESP32-C6 reference board**. For ESP32-S3 Super Mini and Zero, use the [S3-specific settings](ESP32_S3.md#arduino-ide-setup) provided by the contributor instead.
+
 In **Tools**, choose the equivalent settings for your installed ESP32 core:
 
 | Setting | Value |
@@ -138,9 +140,9 @@ Click **Verify** (✓) to compile first. If successful, click **Upload**. Watch 
 
 ### Build assets from GitHub Actions
 
-The `Build ESP32-C6 firmware and release assets` workflow compiles the sketch and packages the **OTA application binary**, a **versioned Arduino sketch ZIP** (including the custom partition table), the **wiring reference PDF**, **`enclosure_stls.zip`** (including the 3MF), and **SHA-256 checksums for every asset**. It takes the wiring and enclosure files from the same repository commit used to build the firmware, so releases automatically include revisions when those files change. Source code is also available from GitHub. Tagged `v*` releases attach these files when the build passes. The build is pinned to ESP32 core 3.3.3 and LibSSH-ESP32 5.10.0; it must pass CI and be hardware-tested before relying on release binaries. **If compilation fails or the binary is too large, no OTA binary should be published.**
+The `Build ESP32-C6 / ESP32-S3 firmware and release assets` workflow compiles **both the XIAO ESP32-C6 and the ESP32-S3 target**. It packages the **tested XIAO OTA application binary**, a versioned XIAO Arduino sketch ZIP, **editable generic ESP32-C6 and ESP32-S3 Super Mini / Zero source-only ZIPs**, the **XIAO wiring reference PDF**, **`enclosure_stls.zip`** (including the XIAO enclosure 3MF), and **SHA-256 checksums for every asset**. It takes the wiring and enclosure files from the same repository commit used to build the firmware, so releases automatically include revisions when those files change. Source code is also available from GitHub. Tagged `v*` releases attach these files when the build passes. The build is pinned to ESP32 core 3.3.3 and LibSSH-ESP32 5.10.0; it must pass CI and be hardware-tested before relying on release binaries. **If compilation fails or the binary is too large, no OTA binary should be published.**
 
-The embedded web interface does not require a separate LittleFS filesystem upload. Release assets include the OTA `.bin`, Arduino sketch ZIP with `partitions.csv`, wiring PDF, enclosure archive and `SHA256SUMS.txt`.
+The embedded web interface does not require a separate LittleFS filesystem upload. The public OTA `.bin` remains **XIAO ESP32-C6 only**; other boards must compile their own board-compatible firmware. Both source-only ZIPs contain the shared sketch and the relevant board setup documentation.
 
 ## 6. Connect to the web interface
 
