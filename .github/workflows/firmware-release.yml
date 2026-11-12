@@ -1,4 +1,4 @@
-name: Build ESP32-C6 firmware and release assets
+name: Build ESP32-C6 / ESP32-S3 firmware and release assets
 
 on:
   pull_request:
@@ -51,6 +51,16 @@ jobs:
             --build-property upload.maximum_size=1769472 \
             --output-dir dist/build \
             firmware/CFS_RFID_XIAO_C6_TFT
+      - name: Compile ESP32-S3 source with 4MB OTA partitions
+        run: |
+          mkdir -p dist/build-s3
+          # Compilation check only. S3 binaries are intentionally NOT
+          # published until a specific hardware/flash target is verified.
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32s3:FlashSize=4M \
+            --build-property upload.maximum_size=1769472 \
+            --output-dir dist/build-s3 \
+            firmware/CFS_RFID_XIAO_C6_TFT
       - name: Package application binary, sketch, and checksums
         shell: bash
         run: |
@@ -100,43 +110,57 @@ jobs:
           cp "$binary" "dist/release/CFS-RFID-XIAO-ESP32C6-OTA.bin"
           zip -qr "dist/release/CFS-RFID-ESP32-${version}-Arduino.zip" firmware/CFS_RFID_XIAO_C6_TFT
 
-          # Extra editable source-only package for untested ESP32-C6 boards.
-          # Prefill the XIAO's tested pin assignments as editable defaults;
-          # do not compile, sign, or publish a generic OTA binary.
-          mkdir -p dist/generic-source
-          cp -R firmware/CFS_RFID_XIAO_C6_TFT dist/generic-source/
-          cp docs/GENERIC_ESP32C6.md dist/generic-source/README-GENERIC-ESP32C6.md
-          cp docs/INSTALL.md docs/SECURITY.md dist/generic-source/
-          generic_config="dist/generic-source/CFS_RFID_XIAO_C6_TFT/board_config.h"
-          sed -i 's/^#define CFS_BOARD_XIAO_ESP32C6     1$/#define CFS_BOARD_XIAO_ESP32C6     0/' "$generic_config"
-          sed -i 's/^#define CFS_BOARD_GENERIC_ESP32C6  0$/#define CFS_BOARD_GENERIC_ESP32C6  1/' "$generic_config"
-          grep -qx '#define CFS_BOARD_XIAO_ESP32C6     0' "$generic_config"
-          grep -qx '#define CFS_BOARD_GENERIC_ESP32C6  1' "$generic_config"
-          grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+19$' "$generic_config"
-          (cd dist/generic-source && zip -qr "../release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip" .)
-          # Verify the public source archive is not accidentally a XIAO build.
-          # Avoid grep -q pipe early-exit/SIGPIPE under 'set -o pipefail'.
-          generic_zip="dist/release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip"
-          unzip -t "$generic_zip"
-          unzip -p "$generic_zip" CFS_RFID_XIAO_C6_TFT/board_config.h > dist/generic-config-check.h
-          grep -qx '#define CFS_BOARD_GENERIC_ESP32C6  1' dist/generic-config-check.h
-          grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+19$' dist/generic-config-check.h
-          unzip -Z -1 "$generic_zip" > dist/generic-zip-entries.txt
-          grep -qx 'README-GENERIC-ESP32C6.md' dist/generic-zip-entries.txt
-          echo "Generic source package validated: $generic_zip"
+          # Source-only archives for other C6 boards and contributor-tested
+          # S3 Super Mini / Zero. Never publish a generic/S3 OTA .bin.
+          mkdir -p dist/generic-c6-source dist/s3-source
+          cp -R firmware/CFS_RFID_XIAO_C6_TFT dist/generic-c6-source/
+          cp docs/GENERIC_ESP32C6.md dist/generic-c6-source/README-GENERIC-ESP32C6.md
+          cp docs/INSTALL.md docs/SECURITY.md dist/generic-c6-source/
+
+          # The C6 generic profile is the #else of CFS_BOARD_XIAO_ESP32C6.
+          c6_config="dist/generic-c6-source/CFS_RFID_XIAO_C6_TFT/board_config.h"
+          sed -i -E '/^[[:space:]]*#define[[:space:]]+CFS_BOARD_XIAO_ESP32C6[[:space:]]+1$/s/1$/0/' "$c6_config"
+          grep -Eq '^[[:space:]]*#define[[:space:]]+CFS_BOARD_XIAO_ESP32C6[[:space:]]+0$' "$c6_config"
+          grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+19$' "$c6_config"
+          (cd dist/generic-c6-source && zip -qr "../release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip" .)
+
+          cp -R firmware/CFS_RFID_XIAO_C6_TFT dist/s3-source/
+          cp docs/ESP32_S3.md dist/s3-source/README-ESP32-S3.md
+          cp docs/INSTALL.md docs/SECURITY.md dist/s3-source/
+          # S3 architecture is selected by the board target in Arduino IDE;
+          # its defined Super Mini/Zero profile is already enabled.
+          s3_config="dist/s3-source/CFS_RFID_XIAO_C6_TFT/board_config.h"
+          grep -Eq '^[[:space:]]*#define[[:space:]]+CFS_BOARD_S3_MINI_ZERO[[:space:]]+1$' "$s3_config"
+          grep -Eq '^[[:space:]]*#define[[:space:]]+RFID_SCK_PIN[[:space:]]+12$' "$s3_config"
+          (cd dist/s3-source && zip -qr "../release/CFS-RFID-ESP32S3-SuperMini-Zero-Source-${version}.zip" .)
+
+          # Validate the actual archive contents, not just the source files.
+          c6_zip="dist/release/CFS-RFID-ESP32C6-Generic-Source-${version}.zip"
+          s3_zip="dist/release/CFS-RFID-ESP32S3-SuperMini-Zero-Source-${version}.zip"
+          unzip -tq "$c6_zip"
+          unzip -tq "$s3_zip"
+          unzip -p "$c6_zip" CFS_RFID_XIAO_C6_TFT/board_config.h > dist/verify-c6.h
+          unzip -p "$s3_zip" CFS_RFID_XIAO_C6_TFT/board_config.h > dist/verify-s3.h
+          grep -Eq '^[[:space:]]*#define[[:space:]]+CFS_BOARD_XIAO_ESP32C6[[:space:]]+0$' dist/verify-c6.h
+          grep -Eq '^[[:space:]]*#define[[:space:]]+CFS_BOARD_S3_MINI_ZERO[[:space:]]+1$' dist/verify-s3.h
+          unzip -Z -1 "$c6_zip" > dist/c6-entries.txt
+          unzip -Z -1 "$s3_zip" > dist/s3-entries.txt
+          grep -Fx 'README-GENERIC-ESP32C6.md' dist/c6-entries.txt
+          grep -Fx 'README-ESP32-S3.md' dist/s3-entries.txt
+          echo "C6 and S3 source-only packages validated"
 
           cp docs/Wiring_Reference.pdf "dist/release/CFS-RFID-ESP32-${version}-Wiring.pdf"
           zip -qr dist/release/enclosure_stls.zip enclosure_stls
 
-          # Publish SHA-256 checksums for all five downloadable assets.
+          # Publish SHA-256 checksums for all six downloadable assets.
           (cd dist/release && sha256sum *.bin *.zip *.pdf > SHA256SUMS.txt)
 
           echo "Release bundle contents:"
           ls -lh dist/release/
-          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 6
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 7
       - uses: actions/upload-artifact@v4
         with:
-          name: CFS-RFID-ESP32C6-firmware
+          name: CFS-RFID-firmware-and-source
           path: dist/release/*
           if-no-files-found: error
 
@@ -149,7 +173,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: CFS-RFID-ESP32C6-firmware
+          name: CFS-RFID-firmware-and-source
           path: release-assets
       - uses: softprops/action-gh-release@v2
         with:
@@ -183,7 +207,8 @@ jobs:
 
             - `CFS-RFID-XIAO-ESP32C6-OTA.bin` — application image for the new web updater
             - `CFS-RFID-ESP32-${{ github.ref_name }}-Arduino.zip` — Arduino sketch, including OTA partition table
-            - `CFS-RFID-ESP32C6-Generic-Source-${{ github.ref_name }}.zip` — editable, untested ESP32-C6 source (no compiled binary)
+            - `CFS-RFID-ESP32C6-Generic-Source-${{ github.ref_name }}.zip` — editable source for other ESP32-C6 boards (no compiled binary)
+            - `CFS-RFID-ESP32S3-SuperMini-Zero-Source-${{ github.ref_name }}.zip` — editable ESP32-S3 source for Super Mini/Zero, hardware-tested by contributor darklight72 (no compiled binary)
             - `CFS-RFID-ESP32-${{ github.ref_name }}-Wiring.pdf` — wiring reference
             - `enclosure_stls.zip` — printable enclosure parts and 3MF
             - `SHA256SUMS.txt` — checksums for all downloads
