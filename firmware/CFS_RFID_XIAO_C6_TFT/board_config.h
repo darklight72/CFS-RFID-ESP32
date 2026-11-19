@@ -11,8 +11,15 @@
 
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
   // For the ESP32-S3, select exactly one profile:
-  // Set to 1 for Super Mini / Waveshare Zero, 0 for generic S3 boards.
-  #define CFS_BOARD_S3_MINI_ZERO      1
+  // Select exactly one profile. S3 boards share the GPIO mapping below.
+  // Generic S3 is opt-in and requires checking the physical board's pins.
+  #define CFS_BOARD_S3_SUPERMINI      0
+  #define CFS_BOARD_S3_ZERO           1
+  #define CFS_BOARD_S3_GENERIC        0
+
+  #if (CFS_BOARD_S3_SUPERMINI + CFS_BOARD_S3_ZERO + CFS_BOARD_S3_GENERIC) != 1
+    #error "Select exactly one ESP32-S3 hardware profile."
+  #endif
 
 #else
   #error "Unsupported target architecture. This firmware supports ESP32-C6 and ESP32-S3."
@@ -58,23 +65,20 @@
 // =========================================================================
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 
-  #if CFS_BOARD_S3_MINI_ZERO
-    // Custom mapping for ESP32-S3 Super Mini and Waveshare S3 Zero
-    #define BOARD_NAME                  "ESP32-S3 Super Mini or Zero"
-    #define RFID_SCK_PIN                12
-    #define RFID_MISO_PIN               13
-    #define RFID_MOSI_PIN               11
-    #define RFID_SS_PIN                 10
-    #define RFID_RST_PIN                 6
-    #define SPK_PIN                      1
-    #define TFT_CS_PIN                   2
-    #define TFT_DC_PIN                   4
-    #define TFT_RST_PIN                  5
-    #define CFS_HAS_XIAO_ANTENNA_SWITCH 0
+  #if CFS_BOARD_S3_SUPERMINI
+    // Custom mapping for ESP32-S3 Super Mini
+    #define BOARD_NAME                  "ESP32-S3 Super Mini"
 
-  #else
-    // Placeholder for future generic or full-sized ESP32-S3 Dev Kits
+  #elif CFS_BOARD_S3_ZERO
+    // Custom mapping for Waveshare ESP32-S3 Zero
+    #define BOARD_NAME                  "Waveshare ESP32-S3 Zero"
+
+  #elif CFS_BOARD_S3_GENERIC
+    // GPIO defaults are shared; verify all pins before using a generic board.
     #define BOARD_NAME                  "Generic ESP32-S3"
+  #else
+    #error "Unknown ESP32-S3 hardware profile."
+  #endif
     #define RFID_SCK_PIN                12
     #define RFID_MISO_PIN               13
     #define RFID_MOSI_PIN               11
@@ -85,7 +89,6 @@
     #define TFT_DC_PIN                   4
     #define TFT_RST_PIN                  5
     #define CFS_HAS_XIAO_ANTENNA_SWITCH 0
-  #endif
 
 #endif
 
