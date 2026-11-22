@@ -1,5 +1,5 @@
 // CFS RFID + Creality Printer Push Agent - single-board XIAO ESP32-C6 merge
-// Firmware version: v1.3.2
+// Firmware version: v1.4
 // Database Updater fixes, UI improvements and legacy updater removal.
 // RFID and printer database transfer logic unchanged.
 //
@@ -24,6 +24,14 @@
 #include "cfs_action_icons.h"
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
+#include <Adafruit_NeoPixel.h>
+
+// Define the current FW version
+#define FW_VERSION  "1.4"
+
+// Define including the debug menu in the build
+#define DEBUG_CLI
+
 
 // Hardware profile: XIAO is the tested default. Generic ESP32-C6, 
 // ESP32-S3 Super Mini, Waveshare ESP32-S3-Zero and Generic ESP32-S3GPIOs
@@ -227,7 +235,7 @@ static void drawTransferNotice() {
   tft.setFont(NULL);tft.setTextSize(1);tft.setTextColor(SCREEN_MUTED);
   textCentered("Do not scan tags",120,223,&FreeSans9pt7b,SCREEN_MUTED);
 }
-static void drawDisplay() {
+void drawDisplay() {
   if(!displayReady)return;
   if(resultSplashActive && (uint32_t)(millis()-resultSplashStarted)>=RESULT_SPLASH_MS){
     resultSplashActive=false;displayDirty=true;
@@ -290,7 +298,7 @@ static void handleTftTransfer() {
   tftTransferLastSeen=millis();displayDirty=true;
   webServer.send(200,"text/plain","OK");
 }
-static void screenStatus(const String &mode) {
+void screenStatus(const String &mode) {
   displayMode=mode;
   displayDirty=true;
   if(mode=="TAG READ" || mode=="PASSIVE READ")showResultSplash(true,"Tag read successfully");
@@ -1134,6 +1142,8 @@ void setup()
   Serial.print(BOARD_NAME);
   Serial.println("...");
 
+
+
   selectAntenna();
   LittleFS.begin(true);
   loadConfig();
@@ -1213,7 +1223,7 @@ void setup()
     else
     {
       Serial.println("STA connect failed; AP remains OFF because AP_ENABLED is disabled");
-    }
+    }    
   }
 
   if (WIFI_HOSTNAME != "")
@@ -1276,10 +1286,65 @@ void setup()
   webServer.begin();
   Serial.println("Setup complete, web server listening on port 80");
   Serial.printf("Printer streaming service on port %d (/getdb, /pushdb)\n", RAW_SERVER_PORT);
+
+  #ifdef DEBUG_CLI
+  Serial.println();
+  Serial.println("Debug CLI Ready");
+  Serial.println("Type 'help'");
+  #endif
+
+  #ifdef CONFIG_IDF_TARGET_ESP32S3
+    WiFi.setSleep(true);
+  #endif
 }
 
 void loop()
 {
+  float currentTemp = temperatureRead();
+
+  if (currentTemp > maxObservedTemp)
+  {
+      maxObservedTemp = currentTemp;
+  }
+
+  if (tempWatchEnabled &&
+    millis() >= nextTempReport)
+  {
+    nextTempReport = millis() + t_freq;
+
+    Serial.printf(
+        "Temp: %.2f C\n",
+        currentTemp
+    );
+  }
+  
+  float t = temperatureRead();
+
+  if (t > maxObservedTemp)
+  {
+    maxObservedTemp = t;
+  }
+
+  #ifdef DEBUG_CLI
+  while (Serial.available())
+  {
+      char c = Serial.read();
+
+      if (c == '\n' || c == '\r')
+      {
+          if (!cliBuffer.isEmpty())
+          {
+              cliProcessCommand(cliBuffer);
+              cliBuffer.clear();
+          }
+      }
+      else
+      {
+          cliBuffer += c;
+      }
+  }
+
+  #endif
   webServer.handleClient();
   if (previewUntil && (int32_t)(millis()-previewUntil)>=0) {
     previewUntil=0;
