@@ -113,23 +113,24 @@ struct CliCommand
 
 inline CliCommand cliCommands[] =
 {
-    { "help",    "Show available commands",                  cliHelp    },
-    { "status",  "System status summary",                    cliStatus  },
-    { "wifi",    "WiFi info | detail | power [8.5|11|20]",   cliWifi    },
-    { "heap",    "Heap statistics",                          cliHeap    },
-    { "flash",   "Flash information",                        cliFlash   },
+    { "ap",      "Enable/Disable AP mode on|off|status",                   cliAP},
     { "build",   "Build information",                        cliBuild   },
-    { "temp",    "MCU temperature",                          cliTemp    },
-    { "reboot",  "Restart ESP32",                            cliReboot  },
-    { "rfid",    "RFID ver | status | reset | scan | dump",  cliRfid    },
-    { "display", "Display status | test | clear | color",    cliDisplay },
+    { "cpu",     "Set CPU Frequency 80|160|240",             cliFreq    },
+    { "display", "Display status | test | clear | restore | color <name>",    cliDisplay },
+    { "flash",   "Flash information",                        cliFlash   },
+    { "heap",    "Heap statistics",                          cliHeap    },
+    { "help",    "Show available commands",                  cliHelp    },
     #if BOARD_HAS_RGB
     { "led",     "LED on [r|g|b] | off | blink (R->G->B x5)", cliLed    },
     #else
     { "led",     "LED on | off | blink",                     cliLed     },
     #endif
-    { "cpu",     "Set CPU Frequency 80|160|240",             cliFreq    },
-    { "ap",      "Enable/Disable AP mode",                   cliAP},
+    { "status",  "System status summary",                    cliStatus  },
+    { "reboot",  "Restart ESP32",                            cliReboot  },
+    { "rfid",    "RFID ver | status | reset | scan | dump",  cliRfid    },
+    { "temp",    "MCU temperature watch [on|off|1-180]",                          cliTemp    },
+    { "wifi",    "WiFi info | detail | power [8.5|11|20]",   cliWifi    },
+        
 };
 
 constexpr size_t CLI_COMMAND_COUNT =
@@ -688,7 +689,7 @@ inline void cliDisplay(const String& args)
         return;
     }
 
-    Serial.println("Usage: display status|test|clear|color|restore <name>");
+    Serial.println("Usage: display status|test|clear|restore|color <name>");
 }
 
 // ---------------------------------------------------
@@ -926,5 +927,7 @@ inline void cliAP(const String& args)
 
         return;
     }
+    Serial.println("Usage: ap on|off|status");
+    return;
 }
 #endif // DEBUG_CLI
