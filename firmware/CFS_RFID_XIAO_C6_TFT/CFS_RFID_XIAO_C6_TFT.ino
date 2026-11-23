@@ -1313,9 +1313,6 @@ void setup()
   Serial.println("Type 'help'");
   #endif
 
-  #ifdef CONFIG_IDF_TARGET_ESP32S3
-    WiFi.setSleep(true);
-  #endif
 }
 
 void loop()
