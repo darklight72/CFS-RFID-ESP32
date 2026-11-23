@@ -41,6 +41,19 @@
 #include "board_config.h"
 #include "firmware_version.h"
 
+#include "debug_cli.h"
+
+#ifdef DEBUG_CLI
+String cliBuffer;
+#endif
+
+bool tempWatchEnabled = false;
+uint32_t nextTempReport = 0;
+float maxObservedTemp = 0;
+long t_freq = 5000;
+
+
+
 MFRC522 mfrc522(RFID_SS_PIN, RFID_RST_PIN);
 Adafruit_ST7789 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
 MFRC522::MIFARE_Key key;
