@@ -11,6 +11,10 @@ extern bool tempWatchEnabled;
 extern uint32_t nextTempReport;
 extern float maxObservedTemp;
 extern long t_freq;
+extern IPAddress Server_IP;
+extern IPAddress Subnet_Mask;
+extern String AP_SSID;
+extern String AP_PASS;
 
 #include <WiFi.h>
 #include <esp_system.h>
@@ -93,6 +97,8 @@ inline void cliReboot(const String& args);
 inline void cliRfid(const String& args);
 inline void cliDisplay(const String& args);
 inline void cliLed(const String& args);
+inline void cliFreq(const String& args);
+inline void cliAP(const String& args);
 
 // ---------------------------------------------------
 // Command table
@@ -122,6 +128,8 @@ inline CliCommand cliCommands[] =
     #else
     { "led",     "LED on | off | blink",                     cliLed     },
     #endif
+    { "cpu",     "Set CPU Frequency 80|160|240",             cliFreq    },
+    { "ap",      "Enable/Disable AP mode",                   cliAP},
 };
 
 constexpr size_t CLI_COMMAND_COUNT =
@@ -390,7 +398,7 @@ inline void cliBuild(const String&)
 
 inline void cliTemp(const String& args)
 {
-#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S3)
+#if defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32C3)
 
     String rest = args;
     String sub = cliPopToken(rest);
@@ -401,6 +409,17 @@ inline void cliTemp(const String& args)
     {
         Serial.printf("Current: %.2f C\n", tempC);
         Serial.printf("Peak:    %.2f C\n", maxObservedTemp);
+        return;
+    }
+
+    if (sub.equalsIgnoreCase("reset"))
+    {
+        maxObservedTemp = temperatureRead();
+
+        Serial.println(
+            "Temperature statistics reset"
+        );
+
         return;
     }
 
@@ -807,4 +826,105 @@ inline void cliLed(const String& args)
 #endif
 }
 
+inline void cliFreq(const String& level)
+{
+    if (level == "80")
+    {
+        Serial.println("Setting CPU Frequency to 80 MHz");
+        setCpuFrequencyMhz(80);
+        return;
+    }
+
+    else if (level == "160")
+    {
+        Serial.println("Setting CPU Frequency to 160 MHz");
+        setCpuFrequencyMhz(160);
+        return;
+    }
+
+    else if (level == "240")
+    {
+        Serial.println("Setting CPU Frequency to 240 MHz");
+        setCpuFrequencyMhz(240);
+        return;
+    }
+
+    else
+    {
+        Serial.println("Usage: cpu 80|160|240");
+        return;
+    }
+    Serial.printf("CPU Frequency: %u MHz\n",getCpuFrequencyMhz());
+    return;
+}
+
+inline void cliAP(const String& args)
+{
+    String rest = args;
+    String sub = cliPopToken(rest);
+
+    if (sub.equalsIgnoreCase("on"))
+    {
+        Serial.println("Enabling AP");
+
+        WiFi.mode(WIFI_AP_STA);
+
+        WiFi.softAPConfig(
+            Server_IP,
+            Server_IP,
+            Subnet_Mask
+        );
+
+        WiFi.softAP(
+            AP_SSID.c_str(),
+            AP_PASS.c_str()
+        );
+
+        Serial.printf(
+            "AP IP: %s\n",
+            WiFi.softAPIP().toString().c_str()
+        );
+
+        return;
+    }
+
+    if (sub.equalsIgnoreCase("off"))
+    {
+        Serial.println("Disabling AP");
+
+        WiFi.softAPdisconnect(true);
+
+        WiFi.mode(WIFI_STA);
+
+        return;
+    }
+
+    if (sub.equalsIgnoreCase("status"))
+    {
+        switch (WiFi.getMode())
+        {
+            case WIFI_OFF:
+                Serial.println("WiFi Mode: OFF");
+                break;
+
+            case WIFI_STA:
+                Serial.println("WiFi Mode: STA (AP Disabled)");
+                break;
+
+            case WIFI_AP:
+                Serial.println("WiFi Mode: AP Only");
+                break;
+
+            case WIFI_AP_STA:
+                Serial.println("WiFi Mode: AP + STA");
+                break;
+
+            default:
+                Serial.println("WiFi Mode: Unknown");
+                break;
+        }
+
+        return;
+    }
+}
 #endif // DEBUG_CLI

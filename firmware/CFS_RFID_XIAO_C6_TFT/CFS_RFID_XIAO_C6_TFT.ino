@@ -25,6 +25,7 @@
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
 #include <Adafruit_NeoPixel.h>
+#include <esp32-hal-cpu.h>
 
 // Define the current FW version
 #define FW_VERSION  "1.4"
@@ -65,6 +66,7 @@ String WIFI_PASS = "";
 String WIFI_HOSTNAME = "cfs-rfid";
 String PRINTER_HOSTNAME = "";
 bool AP_ENABLED = true;
+bool DISABLE_AP_AFTER_STA = true;
 
 // Printer push-agent settings. The printer host itself is user-configurable
 // through PRINTER_HOSTNAME and is loaded from /config.ini.
@@ -1194,6 +1196,15 @@ void setup()
       if (staConnected) {
         Serial.print("STA IP: ");
         Serial.println(WiFi.localIP());
+        if (DISABLE_AP_AFTER_STA)
+        {
+          Serial.println("Waiting 3 seconds before disabling AP");
+          delay(3000);
+          WiFi.softAPdisconnect(true);
+          WiFi.mode(WIFI_STA);
+          Serial.printf("Mode after AP shutdown: %d\n", WiFi.getMode());
+          Serial.printf("STA status: %d\n", WiFi.status());
+        }
       }
     }
   }
@@ -1219,6 +1230,15 @@ void setup()
     {
       Serial.print("STA IP: ");
       Serial.println(WiFi.localIP());
+      if (DISABLE_AP_AFTER_STA)
+      {
+        Serial.println("Waiting 3 seconds before disabling AP");
+        delay(3000);
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        Serial.printf("Mode after AP shutdown: %d\n", WiFi.getMode());
+        Serial.printf("STA status: %d\n", WiFi.status());
+      }
     }
     else
     {
@@ -1313,8 +1333,9 @@ void loop()
     nextTempReport = millis() + t_freq;
 
     Serial.printf(
-        "Temp: %.2f C\n",
-        currentTemp
+        "Temp: %.2f C | CPU: %u MHz\n",
+        currentTemp,
+        getCpuFrequencyMhz()
     );
   }
   
