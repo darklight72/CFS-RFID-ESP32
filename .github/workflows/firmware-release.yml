@@ -39,7 +39,7 @@ jobs:
           }
           retry_install arduino-cli core update-index --additional-urls "$esp32_index"
           retry_install arduino-cli core install esp32:esp32@3.3.3 --additional-urls "$esp32_index"
-          retry_install arduino-cli lib install "Adafruit GFX Library" "Adafruit ST7735 and ST7789 Library" "LibSSH-ESP32@5.10.0"
+          retry_install arduino-cli lib install "Adafruit GFX Library" "Adafruit ST7735 and ST7789 Library" "Adafruit NeoPixel" "LibSSH-ESP32@5.10.0"
       - name: Stamp firmware build identity
         shell: bash
         run: |
