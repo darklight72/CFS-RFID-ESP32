@@ -249,6 +249,8 @@ static void drawTransferNotice() {
   tft.setFont(NULL);tft.setTextSize(1);tft.setTextColor(SCREEN_MUTED);
   textCentered("Do not scan tags",120,223,&FreeSans9pt7b,SCREEN_MUTED);
 }
+void cliRestoreNormalDisplay() { displayDirty = true; drawDisplay(); }
+
 void drawDisplay() {
   if(!displayReady)return;
   if(resultSplashActive && (uint32_t)(millis()-resultSplashStarted)>=RESULT_SPLASH_MS){
@@ -1345,7 +1347,12 @@ void loop()
   for (unsigned count = 0; count < 64 && Serial.available(); ++count) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
-      if (!discardCliLine && !cliBuffer.isEmpty()) cliProcessCommand(cliBuffer);
+      if (!discardCliLine && !cliBuffer.isEmpty()) {
+        // Diagnostics must not interrupt an armed tag operation or a transfer.
+        if (rfidAction != RfidAction::Passive || tagHeld || tftTransferMode.length() || fwUpdateActive)
+          Serial.println("Device busy; retry diagnostics when idle");
+        else cliProcessCommand(cliBuffer);
+      }
       cliBuffer.clear();
       discardCliLine = false;
     } else if (!discardCliLine) {
