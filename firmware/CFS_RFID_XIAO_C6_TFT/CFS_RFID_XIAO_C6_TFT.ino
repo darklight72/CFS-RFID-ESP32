@@ -1,5 +1,5 @@
 // CFS RFID + Creality Printer Push Agent - single-board XIAO ESP32-C6 merge
-// Firmware version: v1.3.2
+// Firmware version: see firmware_version.h
 // Database Updater fixes, UI improvements and legacy updater removal.
 // RFID and printer database transfer logic unchanged.
 //
@@ -24,6 +24,13 @@
 #include "cfs_action_icons.h"
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
+#include <Adafruit_NeoPixel.h>
+#include <esp32-hal-cpu.h>
+
+
+// Define including the debug menu in the build
+#define DEBUG_CLI
+
 
 // Hardware profile: XIAO is the tested default. Generic ESP32-C6, 
 // ESP32-S3 Super Mini, Waveshare ESP32-S3-Zero and Generic ESP32-S3GPIOs
@@ -31,6 +38,19 @@
 
 #include "board_config.h"
 #include "firmware_version.h"
+
+#include "debug_cli.h"
+
+#ifdef DEBUG_CLI
+String cliBuffer;
+#endif
+
+bool tempWatchEnabled = false;
+uint32_t nextTempReport = 0;
+float maxObservedTemp = 0;
+long t_freq = 5000;
+
+
 
 MFRC522 mfrc522(RFID_SS_PIN, RFID_RST_PIN);
 Adafruit_ST7789 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
@@ -57,6 +77,8 @@ String WIFI_PASS = "";
 String WIFI_HOSTNAME = "cfs-rfid";
 String PRINTER_HOSTNAME = "";
 bool AP_ENABLED = true;
+// Automatic AP is opt-in; legacy AP_ENABLED remains downgrade-compatible.
+bool DISABLE_AP_AFTER_STA = false;
 
 // Printer push-agent settings. The printer host itself is user-configurable
 // through PRINTER_HOSTNAME and is loaded from /config.ini.
@@ -227,7 +249,9 @@ static void drawTransferNotice() {
   tft.setFont(NULL);tft.setTextSize(1);tft.setTextColor(SCREEN_MUTED);
   textCentered("Do not scan tags",120,223,&FreeSans9pt7b,SCREEN_MUTED);
 }
-static void drawDisplay() {
+void cliRestoreNormalDisplay() { displayDirty = true; drawDisplay(); }
+
+void drawDisplay() {
   if(!displayReady)return;
   if(resultSplashActive && (uint32_t)(millis()-resultSplashStarted)>=RESULT_SPLASH_MS){
     resultSplashActive=false;displayDirty=true;
@@ -290,7 +314,7 @@ static void handleTftTransfer() {
   tftTransferLastSeen=millis();displayDirty=true;
   webServer.send(200,"text/plain","OK");
 }
-static void screenStatus(const String &mode) {
+void screenStatus(const String &mode) {
   displayMode=mode;
   displayDirty=true;
   if(mode=="TAG READ" || mode=="PASSIVE READ")showResultSplash(true,"Tag read successfully");
@@ -1134,6 +1158,8 @@ void setup()
   Serial.print(BOARD_NAME);
   Serial.println("...");
 
+
+
   selectAntenna();
   LittleFS.begin(true);
   loadConfig();
@@ -1184,6 +1210,7 @@ void setup()
       if (staConnected) {
         Serial.print("STA IP: ");
         Serial.println(WiFi.localIP());
+
       }
     }
   }
@@ -1209,11 +1236,12 @@ void setup()
     {
       Serial.print("STA IP: ");
       Serial.println(WiFi.localIP());
+
     }
     else
     {
       Serial.println("STA connect failed; AP remains OFF because AP_ENABLED is disabled");
-    }
+    }    
   }
 
   if (WIFI_HOSTNAME != "")
@@ -1274,12 +1302,79 @@ void setup()
     (tskIDLE_PRIORITY + 3), NULL, portNUM_PROCESSORS - 1);
 
   webServer.begin();
+  Serial.printf("CPU Frequency: %u MHz\n", getCpuFrequencyMhz());
   Serial.println("Setup complete, web server listening on port 80");
   Serial.printf("Printer streaming service on port %d (/getdb, /pushdb)\n", RAW_SERVER_PORT);
+
+  #ifdef DEBUG_CLI
+  Serial.println();
+  Serial.println("Debug CLI Ready");
+  Serial.println("Type 'help'");
+  #endif
+
+}
+
+// Opt-in only: require stable STA before stopping AP; restore AP after sustained loss.
+static void serviceAutomaticAP() {
+  if (!AP_ENABLED || !DISABLE_AP_AFTER_STA) return;
+  if (rfidAction != RfidAction::Passive || tagHeld || tftTransferMode.length() || fwUpdateActive) return;
+  static bool lastConnected = false;
+  static uint32_t since = millis();
+  static uint32_t lastAttempt = 0;
+  const uint32_t now = millis();
+  const bool connected = WiFi.status() == WL_CONNECTED;
+  if (connected != lastConnected) { lastConnected = connected; since = now; }
+  if (uint32_t(now - since) < (connected ? 10000u : 30000u) ||
+      uint32_t(now - lastAttempt) < 5000u) return;
+  const bool apRunning = (WiFi.getMode() & WIFI_AP) != 0;
+  if (connected && apRunning) {
+    lastAttempt = now;
+    if (WiFi.softAPdisconnect(true)) Serial.println("Automatic AP: disabled after stable STA");
+  } else if (!connected && !apRunning) {
+    lastAttempt = now;
+    if (WiFi.mode(WIFI_AP_STA) && WiFi.softAPConfig(Server_IP, Server_IP, Subnet_Mask) &&
+        WiFi.softAP(AP_SSID.c_str(), AP_PASS.c_str())) {
+      Serial.println("Automatic AP: restored after STA loss");
+    } else {
+      WiFi.mode(WIFI_STA);
+      Serial.println("Automatic AP: recovery failed; retrying");
+    }
+  }
 }
 
 void loop()
 {
+  serviceAutomaticAP();
+  #ifdef DEBUG_CLI
+  static uint32_t lastTempSample = 0;
+  static bool discardCliLine = false;
+  const uint32_t now = millis();
+  if (uint32_t(now - lastTempSample) >= 1000) {
+    lastTempSample = now;
+    float currentTemp = temperatureRead();
+    if (currentTemp > maxObservedTemp) maxObservedTemp = currentTemp;
+    if (tempWatchEnabled && int32_t(now - nextTempReport) >= 0) {
+      nextTempReport = now + t_freq;
+      Serial.printf("Temp: %.2f C | CPU: %u MHz\n", currentTemp, getCpuFrequencyMhz());
+    }
+  }
+  for (unsigned count = 0; count < 64 && Serial.available(); ++count) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (!discardCliLine && !cliBuffer.isEmpty()) {
+        // Diagnostics must not interrupt an armed tag operation or a transfer.
+        if (rfidAction != RfidAction::Passive || tagHeld || tftTransferMode.length() || fwUpdateActive)
+          Serial.println("Device busy; retry diagnostics when idle");
+        else cliProcessCommand(cliBuffer);
+      }
+      cliBuffer.clear();
+      discardCliLine = false;
+    } else if (!discardCliLine) {
+      if (cliBuffer.length() < 128) cliBuffer += c;
+      else { cliBuffer.clear(); discardCliLine = true; Serial.println("Command too long"); }
+    }
+  }
+  #endif
   webServer.handleClient();
   if (previewUntil && (int32_t)(millis()-previewUntil)>=0) {
     previewUntil=0;
@@ -1661,7 +1756,7 @@ void handle404()
 
 void handleConfig()
 {
-  String htmStr = AP_SSID + "|-|" + WIFI_SSID + "|-|" + WIFI_HOSTNAME + "|-|" + PRINTER_HOSTNAME + "|-|" + (AP_ENABLED ? "1" : "0");
+  String htmStr = AP_SSID + "|-|" + WIFI_SSID + "|-|" + WIFI_HOSTNAME + "|-|" + PRINTER_HOSTNAME + "|-|" + (AP_ENABLED ? "1" : "0") + "|-|" + (DISABLE_AP_AFTER_STA ? "1" : "0");
   webServer.setContentLength(htmStr.length());
   webServer.send(200, "text/plain", htmStr);
 }
@@ -1670,6 +1765,12 @@ void handleConfigP()
 {
   if (webServer.hasArg("ap_ssid") && webServer.hasArg("ap_pass") && webServer.hasArg("wifi_ssid") && webServer.hasArg("wifi_pass") && webServer.hasArg("wifi_host") && webServer.hasArg("printer_host"))
   {
+    const bool wantAutomatic = webServer.arg("ap_auto") == "1";
+    const bool wantApEnabled = webServer.hasArg("ap_enabled") || wantAutomatic;
+    if ((!wantApEnabled || wantAutomatic) && webServer.arg("wifi_ssid").isEmpty()) {
+      webServer.send(400, "text/plain", "Configure WiFi before selecting automatic or disabled AP");
+      return;
+    }
     AP_SSID = webServer.arg("ap_ssid");
     if (!webServer.arg("ap_pass").equals("********"))
     {
@@ -1695,12 +1796,12 @@ void handleConfigP()
     // Checkboxes only appear in form data when checked - so treat presence
     // of the arg as "on". Refuse to disable the AP unless WiFi credentials
     // are actually set, so the device can't be locked out of being reachable.
-    bool wantApEnabled = webServer.hasArg("ap_enabled");
     AP_ENABLED = wantApEnabled;
+    DISABLE_AP_AFTER_STA = wantAutomatic;
     File file = LittleFS.open("/config.ini", "w");
     if (file)
     {
-      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
+      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\nAP_AUTO=" + (DISABLE_AP_AFTER_STA ? "1" : "0") + "\r\n");
       file.close();
     }
     String htmStr = "OK";
@@ -2075,6 +2176,11 @@ void loadConfig()
         apEnabledStr.trim();
         AP_ENABLED = apEnabledStr != "0";
       }
+      if (instr(iniData, "AP_AUTO=")) {
+        String autoStr = split(iniData, "AP_AUTO=", "\r\n");
+        autoStr.trim();
+        DISABLE_AP_AFTER_STA = AP_ENABLED && autoStr == "1";
+      }
       
     }
   }
@@ -2083,7 +2189,7 @@ void loadConfig()
     File file = LittleFS.open("/config.ini", "w");
     if (file)
     {
-      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
+      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\nAP_AUTO=" + (DISABLE_AP_AFTER_STA ? "1" : "0") + "\r\n");
       file.close();
     }
   }

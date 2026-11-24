@@ -511,7 +511,7 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
               document.getElementById("wifi_host").value = configData[2];
               document.getElementById("printer_host").value = configData[3];
               document.getElementById("printer_pass").value = ""; // Never return saved credentials to the browser.
-              document.getElementById("ap_enabled").checked = configData.length > 4 ? configData[4] == "1" : true;
+              document.getElementById("ap_enabled").value = configData[4] == "0" ? "off" : (configData[5] == "1" ? "auto" : "on");
             } else {
               document.getElementById("ap_ssid").value = "K2_RFID";
               document.getElementById("wifi_ssid").value = "";
@@ -527,11 +527,11 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
       xhr.send();
     }
     function saveConf() {
-      if (!document.getElementById("ap_enabled").checked && document.getElementById("wifi_ssid").value == "") {
+      if (document.getElementById("ap_enabled").value != "on" && document.getElementById("wifi_ssid").value == "") {
         alert("Set a WiFi network before disabling the Access Point, or you may lose access to this device.");
         return;
       }
-      var postdata = "ap_ssid=" + document.getElementById("ap_ssid").value + "&ap_pass=" + document.getElementById("ap_pass").value + "&wifi_ssid=" + document.getElementById("wifi_ssid").value + "&wifi_pass=" + document.getElementById("wifi_pass").value + "&wifi_host=" + document.getElementById("wifi_host").value + "&printer_host=" + document.getElementById("printer_host").value + "&printer_pass=" + encodeURIComponent(document.getElementById("printer_pass").value) + (document.getElementById("ap_enabled").checked ? "&ap_enabled=1" : "") + "&submit";
+      var postdata = "ap_ssid=" + document.getElementById("ap_ssid").value + "&ap_pass=" + document.getElementById("ap_pass").value + "&wifi_ssid=" + document.getElementById("wifi_ssid").value + "&wifi_pass=" + document.getElementById("wifi_pass").value + "&wifi_host=" + document.getElementById("wifi_host").value + "&printer_host=" + document.getElementById("printer_host").value + "&printer_pass=" + encodeURIComponent(document.getElementById("printer_pass").value) + (document.getElementById("ap_enabled").value != "off" ? "&ap_enabled=1" : "") + (document.getElementById("ap_enabled").value == "auto" ? "&ap_auto=1" : "") + "&submit";
       xhrRetry("POST", "/config", postdata, "application/x-www-form-urlencoded",
         function () {
           dialog.close();
@@ -1303,9 +1303,9 @@ static const char indexData[] PROGMEM = R"==(<!DOCTYPE html>
             </th>
           </tr>
           <tr>
-            <td>ENABLE AP:</td>
+            <td>AP MODE:</td>
             <td>
-              <input type="checkbox" id="ap_enabled" checked>
+              <select id="ap_enabled"><option value="on">Always enabled</option><option value="auto">Automatic (STA fallback)</option><option value="off">Always disabled</option></select>
             </td>
           </tr>
           <tr>

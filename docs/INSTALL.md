@@ -227,3 +227,9 @@ The web interface provides these separate manual actions:
 - [Original project, credits and licence review](UPSTREAM_AND_LICENSE.md)
 
 **Credits:** This project builds on the Arduino code from [DnG-Crafts/K2-RFID](https://github.com/DnG-Crafts/K2-RFID). It is a community project, not an official Creality product.
+
+## Serial diagnostics (v1.4.0)
+
+Thanks to @darklight72 for the diagnostic CLI contribution. Source builds also require the Adafruit NeoPixel library. Connect via USB serial at 115200 baud with newline termination. Use `help` for commands, `build` for build identity, `cpu` for the current clock, `cpu 80` or `cpu 160` on C6, and additionally `cpu 240` on S3. Clock changes are temporary and revert to the board build default on reboot. Use `temp watch on` and `temp watch off` to monitor internal chip temperature. Diagnostics may be refused while an RFID operation or transfer is active.
+
+Network settings offer Always enabled, Automatic (AP starts at boot, stops after stable STA for 10 seconds and returns after 30 seconds of STA loss), and Always disabled. Existing settings are preserved; automatic is opt-in and requires configured Wi-Fi. On downgrade, automatic becomes always enabled. Serial `ap status` reports the actual mode; changes are made in the web settings. Printer database transfers remain explicitly user initiated.
