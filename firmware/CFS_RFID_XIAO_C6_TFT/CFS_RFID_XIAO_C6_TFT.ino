@@ -77,7 +77,7 @@ String WIFI_PASS = "";
 String WIFI_HOSTNAME = "cfs-rfid";
 String PRINTER_HOSTNAME = "";
 bool AP_ENABLED = true;
-// Preserve existing AP preference until configurable automatic mode is integrated.
+// Automatic AP is opt-in; legacy AP_ENABLED remains downgrade-compatible.
 bool DISABLE_AP_AFTER_STA = false;
 
 // Printer push-agent settings. The printer host itself is user-configurable
@@ -1210,15 +1210,7 @@ void setup()
       if (staConnected) {
         Serial.print("STA IP: ");
         Serial.println(WiFi.localIP());
-        if (DISABLE_AP_AFTER_STA)
-        {
-          Serial.println("Waiting 3 seconds before disabling AP");
-          delay(3000);
-          WiFi.softAPdisconnect(true);
-          WiFi.mode(WIFI_STA);
-          Serial.printf("Mode after AP shutdown: %d\n", WiFi.getMode());
-          Serial.printf("STA status: %d\n", WiFi.status());
-        }
+
       }
     }
   }
@@ -1244,15 +1236,7 @@ void setup()
     {
       Serial.print("STA IP: ");
       Serial.println(WiFi.localIP());
-      if (DISABLE_AP_AFTER_STA)
-      {
-        Serial.println("Waiting 3 seconds before disabling AP");
-        delay(3000);
-        WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_STA);
-        Serial.printf("Mode after AP shutdown: %d\n", WiFi.getMode());
-        Serial.printf("STA status: %d\n", WiFi.status());
-      }
+
     }
     else
     {
@@ -1318,6 +1302,7 @@ void setup()
     (tskIDLE_PRIORITY + 3), NULL, portNUM_PROCESSORS - 1);
 
   webServer.begin();
+  Serial.printf("CPU Frequency: %u MHz\n", getCpuFrequencyMhz());
   Serial.println("Setup complete, web server listening on port 80");
   Serial.printf("Printer streaming service on port %d (/getdb, /pushdb)\n", RAW_SERVER_PORT);
 
@@ -1329,8 +1314,37 @@ void setup()
 
 }
 
+// Opt-in only: require stable STA before stopping AP; restore AP after sustained loss.
+static void serviceAutomaticAP() {
+  if (!AP_ENABLED || !DISABLE_AP_AFTER_STA) return;
+  if (rfidAction != RfidAction::Passive || tagHeld || tftTransferMode.length() || fwUpdateActive) return;
+  static bool lastConnected = false;
+  static uint32_t since = millis();
+  static uint32_t lastAttempt = 0;
+  const uint32_t now = millis();
+  const bool connected = WiFi.status() == WL_CONNECTED;
+  if (connected != lastConnected) { lastConnected = connected; since = now; }
+  if (uint32_t(now - since) < (connected ? 10000u : 30000u) ||
+      uint32_t(now - lastAttempt) < 5000u) return;
+  const bool apRunning = (WiFi.getMode() & WIFI_AP) != 0;
+  if (connected && apRunning) {
+    lastAttempt = now;
+    if (WiFi.softAPdisconnect(true)) Serial.println("Automatic AP: disabled after stable STA");
+  } else if (!connected && !apRunning) {
+    lastAttempt = now;
+    if (WiFi.mode(WIFI_AP_STA) && WiFi.softAPConfig(Server_IP, Server_IP, Subnet_Mask) &&
+        WiFi.softAP(AP_SSID.c_str(), AP_PASS.c_str())) {
+      Serial.println("Automatic AP: restored after STA loss");
+    } else {
+      WiFi.mode(WIFI_STA);
+      Serial.println("Automatic AP: recovery failed; retrying");
+    }
+  }
+}
+
 void loop()
 {
+  serviceAutomaticAP();
   #ifdef DEBUG_CLI
   static uint32_t lastTempSample = 0;
   static bool discardCliLine = false;
@@ -1742,7 +1756,7 @@ void handle404()
 
 void handleConfig()
 {
-  String htmStr = AP_SSID + "|-|" + WIFI_SSID + "|-|" + WIFI_HOSTNAME + "|-|" + PRINTER_HOSTNAME + "|-|" + (AP_ENABLED ? "1" : "0");
+  String htmStr = AP_SSID + "|-|" + WIFI_SSID + "|-|" + WIFI_HOSTNAME + "|-|" + PRINTER_HOSTNAME + "|-|" + (AP_ENABLED ? "1" : "0") + "|-|" + (DISABLE_AP_AFTER_STA ? "1" : "0");
   webServer.setContentLength(htmStr.length());
   webServer.send(200, "text/plain", htmStr);
 }
@@ -1751,6 +1765,12 @@ void handleConfigP()
 {
   if (webServer.hasArg("ap_ssid") && webServer.hasArg("ap_pass") && webServer.hasArg("wifi_ssid") && webServer.hasArg("wifi_pass") && webServer.hasArg("wifi_host") && webServer.hasArg("printer_host"))
   {
+    const bool wantAutomatic = webServer.arg("ap_auto") == "1";
+    const bool wantApEnabled = webServer.hasArg("ap_enabled") || wantAutomatic;
+    if ((!wantApEnabled || wantAutomatic) && webServer.arg("wifi_ssid").isEmpty()) {
+      webServer.send(400, "text/plain", "Configure WiFi before selecting automatic or disabled AP");
+      return;
+    }
     AP_SSID = webServer.arg("ap_ssid");
     if (!webServer.arg("ap_pass").equals("********"))
     {
@@ -1776,12 +1796,12 @@ void handleConfigP()
     // Checkboxes only appear in form data when checked - so treat presence
     // of the arg as "on". Refuse to disable the AP unless WiFi credentials
     // are actually set, so the device can't be locked out of being reachable.
-    bool wantApEnabled = webServer.hasArg("ap_enabled");
     AP_ENABLED = wantApEnabled;
+    DISABLE_AP_AFTER_STA = wantAutomatic;
     File file = LittleFS.open("/config.ini", "w");
     if (file)
     {
-      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
+      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\nAP_AUTO=" + (DISABLE_AP_AFTER_STA ? "1" : "0") + "\r\n");
       file.close();
     }
     String htmStr = "OK";
@@ -2156,6 +2176,11 @@ void loadConfig()
         apEnabledStr.trim();
         AP_ENABLED = apEnabledStr != "0";
       }
+      if (instr(iniData, "AP_AUTO=")) {
+        String autoStr = split(iniData, "AP_AUTO=", "\r\n");
+        autoStr.trim();
+        DISABLE_AP_AFTER_STA = AP_ENABLED && autoStr == "1";
+      }
       
     }
   }
@@ -2164,7 +2189,7 @@ void loadConfig()
     File file = LittleFS.open("/config.ini", "w");
     if (file)
     {
-      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\n");
+      file.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nPRINTER_HOST=" + PRINTER_HOSTNAME + "\r\nPRINTER_PASS=" + PRINTER_PASSWORD + "\r\nAP_ENABLED=" + (AP_ENABLED ? "1" : "0") + "\r\nAP_AUTO=" + (DISABLE_AP_AFTER_STA ? "1" : "0") + "\r\n");
       file.close();
     }
   }

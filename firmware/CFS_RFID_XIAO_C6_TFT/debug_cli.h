@@ -115,7 +115,11 @@ inline CliCommand cliCommands[] =
 {
     { "ap",      "AP status (settings managed via web)",                   cliAP},
     { "build",   "Build information",                        cliBuild   },
-    { "cpu",     "Set CPU Frequency 80|160|240",             cliFreq    },
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+    { "cpu",     "CPU frequency [80|160|240]", cliFreq },
+#else
+    { "cpu",     "CPU frequency [80|160]", cliFreq },
+#endif
     { "display", "Display status | test | clear | restore | color <name>",    cliDisplay },
     { "flash",   "Flash information",                        cliFlash   },
     { "heap",    "Heap statistics",                          cliHeap    },
@@ -516,6 +520,10 @@ inline void cliRfid(const String& args)
         {
             Serial.println(" (v1.0)");
         }
+        else if (ver == 0x82)
+        {
+            Serial.println(" (compatible clone / non-standard version)");
+        }
         else if (ver == 0x00 || ver == 0xFF)
         {
             Serial.println(" (SPI comms failure - check MISO/MOSI/SCK/CS/3.3V)");
@@ -832,6 +840,7 @@ inline void cliLed(const String& args)
 
 inline void cliFreq(const String& level)
 {
+    if (level.isEmpty()) { Serial.printf("CPU Frequency: %u MHz\n", getCpuFrequencyMhz()); return; }
     if (level != "80" && level != "160"
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
         && level != "240"
