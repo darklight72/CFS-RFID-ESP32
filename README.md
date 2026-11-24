@@ -12,7 +12,9 @@ Built around an **ESP32-C6 or ESP32-S3 development board**, an **RC522 RFID read
 
 ![Finished CFS RFID device](images/rfid-printer.JPG)
 
-> **OTA-capable firmware (successor to v1.0.1).** Adds manual browser firmware updates and CI-built release downloads. **Upgrading from v1.0.1 or earlier requires a one-time USB flash with new partitions and can erase the reader’s local database and settings.** See the migration instructions below.
+**Current firmware: v1.4.0** — serial diagnostics, board-aware CPU frequency controls and optional automatic Access Point management. See [releases](https://github.com/gavrd7/CFS-RFID-ESP32/releases) for downloads.
+
+> **OTA-capable firmware (introduced after v1.0.1).** Supports manual browser firmware updates and CI-built release downloads. **Upgrading from v1.0.1 or earlier requires a one-time USB flash with new partitions and can erase the reader’s local database and settings.** See the migration instructions below.
 
 ## What can it do?
 
@@ -21,6 +23,8 @@ Built around an **ESP32-C6 or ESP32-S3 development board**, an **RC522 RFID read
 - **Choose filament details:** Select an existing filament or create a custom entry using the web interface.
 - **See information on the screen:** The TFT shows material names, filament colours, tag status and confirmations.
 - **Sync with a printer:** Use the web interface to manually download material information from your printer or send updated entries back to it.
+- **Troubleshoot over USB:** Use the serial diagnostic CLI for system information, temperatures, CPU frequency, Wi-Fi, RFID, TFT and LED tests.
+- **Choose an AP policy:** Keep the access point enabled, disable it, or automatically switch it off when Wi-Fi is stable and restore it if connectivity is lost.
 - **Run from one board:** The reader, screen, web interface and printer connection run on a compatible ESP32-C6 or ESP32-S3 board. See the [C6](docs/GENERIC_ESP32C6.md) and [S3](docs/ESP32_S3.md) hardware guides for board-specific setup.
 
 ### A look at the web interface
@@ -70,6 +74,46 @@ This is the short version for getting started. **Follow the [full installation g
 
 **Important:** If you're updating an already configured board, keep **Erase All Flash disabled** to avoid unnecessarily wiping stored settings. See the installation guide for LittleFS considerations.
 
+## Network and Access Point management
+
+In the web interface's network settings, select the AP mode that suits your installation:
+
+| Mode | Behaviour |
+| --- | --- |
+| Always enabled | Keep the device's setup Access Point available alongside configured Wi-Fi. |
+| Automatic | Start with AP available, disable it after 10 seconds of stable station connectivity, and restore it after 30 seconds of sustained connection loss. Requires configured Wi-Fi. |
+| Always disabled | Use station-only mode; the AP stays disabled even if Wi-Fi fails. |
+
+Automatic mode is opt-in. Existing enabled/disabled preferences are preserved during upgrade. On downgrade to firmware without automatic mode, the automatic preference is treated as AP enabled. If using station-only mode, retain USB access for recovery in case network credentials or connectivity change.
+
+Automatic AP management was inspired by contributor-reported thermal improvements, particularly on ESP32-S3 hardware. Actual temperatures depend on the board, enclosure, network and workload. It does not trigger printer transfers or change filament records.
+
+## Serial diagnostics
+
+Connect the ESP32 to a computer with a USB data cable and open Arduino IDE Serial Monitor (or another serial terminal) at **115200 baud**, with newline termination. Enter `help` to list commands.
+
+| Command | Purpose |
+| --- | --- |
+| `build`, `status` | Firmware identity and system status |
+| `cpu` | Report current CPU frequency |
+| `cpu 80`, `cpu 160` | Temporarily change CPU frequency on C6 or S3 |
+| `cpu 240` | S3 only; rejected on C6 |
+| `temp`, `temp watch on`, `temp watch off` | Current/peak internal temperature and live monitoring |
+| `temp watch 10` | Set monitoring interval to 10 seconds |
+| `wifi info`, `wifi detail`, `wifi power` | Wi-Fi diagnostics and transmit-power information |
+| `ap status` | Actual AP/STA operating state (change AP policy in web settings) |
+| `heap`, `flash` | Memory and flash information |
+| `rfid ver`, `rfid status`, `rfid reset`, `rfid scan`, `rfid dump` | RFID troubleshooting; dump reads tag data, not a write command |
+| `display status`, `display test`, `display restore` | TFT diagnostics |
+| `led on`, `led off`, `led blink` | LED diagnostics where supported by the hardware |
+| `reboot` | Restart the device |
+
+Clock changes are temporary and revert to the board's build default on reboot (160 MHz observed on the XIAO C6). The C6 supports a maximum of 160 MHz; S3 supports up to 240 MHz. The startup log reports the actual clock. Diagnostics may be rejected while an RFID operation or transfer is active. Use a spare tag for troubleshooting, and avoid running disruptive tests during normal operation.
+
+The XIAO C6 integration was physically tested at 80 and 160 MHz, including RFID operations and printer database transfers. The contributor tested the original diagnostics on C6 and S3 boards; the final revised automatic AP policy should not be assumed physically validated on every S3 variant.
+
+For source builds, install **Adafruit NeoPixel** in addition to the existing libraries listed in the [installation guide](docs/INSTALL.md).
+
 ## Reading and writing tags
 
 1. Open the device's web interface.
@@ -83,9 +127,9 @@ Use an expendable tag when first learning the write process. Writing incorrect d
 
 ## Web firmware updates (OTA)
 
-> **IMPORTANT — FIRST-TIME OTA MIGRATION MAY ERASE LOCAL DATA:** Firmware v1.0.1 and earlier use **No OTA** partitions. This release moves LittleFS to a different flash address/size to make room for two firmware slots. **Before flashing over USB, use Database Updater → Download Database to save `material_database.json`, and record your AP, Wi-Fi and printer settings.** The initial USB flash may leave the existing filesystem inaccessible or trigger formatting. After flashing, restore the database using **Select file / Update Database** or manually **Sync From Printer** (which may omit reader-only custom records). **The OTA `.bin` cannot perform this initial partition migration.** Full steps: [installation guide](docs/INSTALL.md#moving-an-existing-reader-to-web-firmware-updates).
+> **IMPORTANT — FIRST-TIME OTA MIGRATION MAY ERASE LOCAL DATA:** Firmware v1.0.1 and earlier use **No OTA** partitions. The initial OTA-capable partition migration moves LittleFS to a different flash address/size to make room for two firmware slots. **Before flashing over USB, use Database Updater → Download Database to save `material_database.json`, and record your AP, Wi-Fi and printer settings.** The initial USB flash may leave the existing filesystem inaccessible or trigger formatting. After flashing, restore the database using **Select file / Update Database** or manually **Sync From Printer** (which may omit reader-only custom records). **The OTA `.bin` cannot perform this initial partition migration.** Full steps: [installation guide](docs/INSTALL.md#moving-an-existing-reader-to-web-firmware-updates).
 
-**Printer SSH credentials after OTA:** Precompiled GitHub Actions binaries do not contain your private printer root password. Enter it once under **Settings → Printer SSH Password** and save. It is stored in the reader’s LittleFS `/config.ini` and was confirmed to survive a subsequent OTA update, along with the local material database. A blank password field retains the saved password; the Settings page does not reveal it. If you previously compiled the password into the sketch, you must enter it again once after upgrading to this release. Credentials are stored as plaintext and the settings interface uses unauthenticated HTTP; use a trusted, isolated LAN only.
+**Printer SSH credentials after OTA:** Precompiled GitHub Actions binaries do not contain your private printer root password. Enter it once under **Settings → Printer SSH Password** and save. It is stored in the reader’s LittleFS `/config.ini` and was confirmed to survive a subsequent OTA update, along with the local material database. A blank password field retains the saved password; the Settings page does not reveal it. If you previously compiled the password into the sketch, you must enter it again once after upgrading to an OTA-capable build. Credentials are stored as plaintext and the settings interface uses unauthenticated HTTP; use a trusted, isolated LAN only.
 
 
 On the **tested XIAO**, once the **dual-OTA partition layout** is installed over USB, **Settings → Firmware Updater** accepts the compatible **`CFS-RFID-XIAO-ESP32C6-OTA.bin`** application image from a successful GitHub Actions build or tagged release. On other ESP32-C6 or ESP32-S3 boards, build firmware for the specific board; **do not use the published XIAO OTA binary**. These *subsequent* OTA updates normally leave the separate LittleFS data partition untouched. Hardware tests confirmed successful OTA flashing/reboot, printer reconnection, custom-tag reading, database restoration by printer sync and password persistence across updates. The release workflow packages the **XIAO OTA binary**, XIAO Arduino sketch ZIP, separate **generic ESP32-C6** and **ESP32-S3 Super Mini / Zero source-only ZIPs**, XIAO wiring PDF, XIAO enclosure files and SHA-256 checksums.
@@ -100,7 +144,7 @@ The web interface also has separate actions to **sync/download material data fro
 
 **Database Updater:** Use **Download Database** to back up the current local `material_database.json`. Use **Select file → Update Database** to restore that JSON, or **Sync From Printer** to retrieve the configured printer’s current material database. Printer sync may not recover custom material entries stored only on the reader. All actions are manual.
 
-**Firmware updates:** The old unsafe updater was removed in v1.0.1; this release introduces the replacement OTA updater. First-time migration from No OTA still requires USB. Thereafter, manually upload a **board-compatible** OTA application binary via the web interface; published precompiled OTA images are for the tested XIAO only.
+**Firmware updates:** The old unsafe updater was removed in v1.0.1; the subsequent OTA-capable firmware introduced the replacement updater. First-time migration from No OTA still requires USB. Thereafter, manually upload a **board-compatible** OTA application binary via the web interface; published precompiled OTA images are for the tested XIAO only.
 
 **These are manual actions, not automatic background synchronisation.** Back up the printer's material database before your first push, and avoid testing database writes on a production printer until you understand the recovery process.
 
@@ -148,6 +192,8 @@ You can print the same case used for the **tested XIAO build**. The files are in
 ## Credits and licence status
 
 **ESP32-S3 support:** Thanks to [darklight72](https://github.com/darklight72) for [PR #6](https://github.com/gavrd7/CFS-RFID-ESP32/pull/6), including Super Mini / Zero hardware validation, GPIO wiring, printer-transfer and OTA testing. See the [ESP32-S3 guide](docs/ESP32_S3.md) for the contributor's test configuration.
+
+**Serial diagnostics and AP management (v1.4.0):** Thanks to [darklight72](https://github.com/darklight72) for the diagnostic suite, AP shutdown investigation and multi-board testing in [PR #12](https://github.com/gavrd7/CFS-RFID-ESP32/pull/12). The contribution was integrated with compatibility safeguards and configurable AP recovery in [PR #13](https://github.com/gavrd7/CFS-RFID-ESP32/pull/13), preserving the original commits and authorship.
 
 **Licensing:** [AGPL-3.0-only](LICENSE) applies **only to original contributions that this project's author owns** (including original documentation and enclosure designs). It does **not** cover inherited DnG-Crafts Arduino code, bundled third-party sources or Creality logos. See [LICENSE-SCOPE.md](LICENSE-SCOPE.md) for the exact boundaries and [upstream licensing notes](docs/UPSTREAM_AND_LICENSE.md) for outstanding permissions. **Do not assume the complete firmware is AGPL-licensed.**
 
