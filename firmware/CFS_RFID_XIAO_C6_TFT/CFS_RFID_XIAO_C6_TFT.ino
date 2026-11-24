@@ -1,5 +1,5 @@
 // CFS RFID + Creality Printer Push Agent - single-board XIAO ESP32-C6 merge
-// Firmware version: v1.4
+// Firmware version: see firmware_version.h
 // Database Updater fixes, UI improvements and legacy updater removal.
 // RFID and printer database transfer logic unchanged.
 //
@@ -27,8 +27,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <esp32-hal-cpu.h>
 
-// Define the current FW version
-#define FW_VERSION  "1.4"
 
 // Define including the debug menu in the build
 #define DEBUG_CLI
@@ -79,7 +77,8 @@ String WIFI_PASS = "";
 String WIFI_HOSTNAME = "cfs-rfid";
 String PRINTER_HOSTNAME = "";
 bool AP_ENABLED = true;
-bool DISABLE_AP_AFTER_STA = true;
+// Preserve existing AP preference until configurable automatic mode is integrated.
+bool DISABLE_AP_AFTER_STA = false;
 
 // Printer push-agent settings. The printer host itself is user-configurable
 // through PRINTER_HOSTNAME and is loaded from /config.ini.
@@ -1330,51 +1329,30 @@ void setup()
 
 void loop()
 {
-  float currentTemp = temperatureRead();
-
-  if (currentTemp > maxObservedTemp)
-  {
-      maxObservedTemp = currentTemp;
-  }
-
-  if (tempWatchEnabled &&
-    millis() >= nextTempReport)
-  {
-    nextTempReport = millis() + t_freq;
-
-    Serial.printf(
-        "Temp: %.2f C | CPU: %u MHz\n",
-        currentTemp,
-        getCpuFrequencyMhz()
-    );
-  }
-  
-  float t = temperatureRead();
-
-  if (t > maxObservedTemp)
-  {
-    maxObservedTemp = t;
-  }
-
   #ifdef DEBUG_CLI
-  while (Serial.available())
-  {
-      char c = Serial.read();
-
-      if (c == '\n' || c == '\r')
-      {
-          if (!cliBuffer.isEmpty())
-          {
-              cliProcessCommand(cliBuffer);
-              cliBuffer.clear();
-          }
-      }
-      else
-      {
-          cliBuffer += c;
-      }
+  static uint32_t lastTempSample = 0;
+  static bool discardCliLine = false;
+  const uint32_t now = millis();
+  if (uint32_t(now - lastTempSample) >= 1000) {
+    lastTempSample = now;
+    float currentTemp = temperatureRead();
+    if (currentTemp > maxObservedTemp) maxObservedTemp = currentTemp;
+    if (tempWatchEnabled && int32_t(now - nextTempReport) >= 0) {
+      nextTempReport = now + t_freq;
+      Serial.printf("Temp: %.2f C | CPU: %u MHz\n", currentTemp, getCpuFrequencyMhz());
+    }
   }
-
+  for (unsigned count = 0; count < 64 && Serial.available(); ++count) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (!discardCliLine && !cliBuffer.isEmpty()) cliProcessCommand(cliBuffer);
+      cliBuffer.clear();
+      discardCliLine = false;
+    } else if (!discardCliLine) {
+      if (cliBuffer.length() < 128) cliBuffer += c;
+      else { cliBuffer.clear(); discardCliLine = true; Serial.println("Command too long"); }
+    }
+  }
   #endif
   webServer.handleClient();
   if (previewUntil && (int32_t)(millis()-previewUntil)>=0) {
