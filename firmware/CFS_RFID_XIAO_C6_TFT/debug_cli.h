@@ -51,7 +51,7 @@ extern String AP_PASS;
 #  ifdef LED_BUILTIN
 #    define CLI_LED_PIN LED_BUILTIN
 #  else
-#    define CLI_LED_PIN 2
+#    define CLI_LED_PIN -1
 #  endif
 #endif
 
@@ -113,7 +113,7 @@ struct CliCommand
 
 inline CliCommand cliCommands[] =
 {
-    { "ap",      "Enable/Disable AP mode on|off|status",                   cliAP},
+    { "ap",      "AP status (settings managed via web)",                   cliAP},
     { "build",   "Build information",                        cliBuild   },
     { "cpu",     "Set CPU Frequency 80|160|240",             cliFreq    },
     { "display", "Display status | test | clear | restore | color <name>",    cliDisplay },
@@ -238,7 +238,7 @@ unsigned long seconds =
 
     Serial.println("\n===== STATUS =====");
     Serial.printf("Board    : %s\n", BOARD_NAME);
-    Serial.printf("Version  : %s\n", FW_VERSION);
+    Serial.printf("Version  : %s\n", FW_DISPLAY_VERSION);
     Serial.printf("Uptime   : %lud %luh %lum %lus\n",
     days,
     hours,
@@ -389,7 +389,7 @@ inline void cliBuild(const String&)
 {
     Serial.println();
     Serial.printf("Board   : %s\n", BOARD_NAME);
-    Serial.printf("Version : %s\n", FW_VERSION);
+    Serial.printf("Version : %s\n", FW_DISPLAY_VERSION);
     Serial.printf("Built   : %s %s\n", __DATE__, __TIME__);
 }
 
@@ -698,6 +698,7 @@ inline void cliDisplay(const String& args)
 
 inline void cliLedPinSet(bool on)
 {
+    if (CLI_LED_PIN < 0 || CLI_LED_PIN == RFID_RST_PIN || CLI_LED_PIN == RFID_SS_PIN || CLI_LED_PIN == RFID_SCK_PIN || CLI_LED_PIN == RFID_MISO_PIN || CLI_LED_PIN == RFID_MOSI_PIN || CLI_LED_PIN == TFT_CS_PIN || CLI_LED_PIN == TFT_DC_PIN || CLI_LED_PIN == TFT_RST_PIN || CLI_LED_PIN == SPK_PIN) return;
     pinMode(CLI_LED_PIN, OUTPUT);
 #if CLI_LED_ACTIVE_HIGH
     digitalWrite(CLI_LED_PIN, on ? HIGH : LOW);
@@ -829,34 +830,19 @@ inline void cliLed(const String& args)
 
 inline void cliFreq(const String& level)
 {
-    if (level == "80")
-    {
-        Serial.println("Setting CPU Frequency to 80 MHz");
-        setCpuFrequencyMhz(80);
+    if (level != "80" && level != "160"
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+        && level != "240"
+#endif
+    ) {
+        Serial.println("Unsupported CPU frequency for this board");
         return;
     }
-
-    else if (level == "160")
-    {
-        Serial.println("Setting CPU Frequency to 160 MHz");
-        setCpuFrequencyMhz(160);
+    if (!setCpuFrequencyMhz(level.toInt())) {
+        Serial.println("CPU frequency change failed");
         return;
     }
-
-    else if (level == "240")
-    {
-        Serial.println("Setting CPU Frequency to 240 MHz");
-        setCpuFrequencyMhz(240);
-        return;
-    }
-
-    else
-    {
-        Serial.println("Usage: cpu 80|160|240");
-        return;
-    }
-    Serial.printf("CPU Frequency: %u MHz\n",getCpuFrequencyMhz());
-    return;
+    Serial.printf("CPU Frequency: %u MHz\n", getCpuFrequencyMhz());
 }
 
 inline void cliAP(const String& args)
@@ -864,39 +850,8 @@ inline void cliAP(const String& args)
     String rest = args;
     String sub = cliPopToken(rest);
 
-    if (sub.equalsIgnoreCase("on"))
-    {
-        Serial.println("Enabling AP");
-
-        WiFi.mode(WIFI_AP_STA);
-
-        WiFi.softAPConfig(
-            Server_IP,
-            Server_IP,
-            Subnet_Mask
-        );
-
-        WiFi.softAP(
-            AP_SSID.c_str(),
-            AP_PASS.c_str()
-        );
-
-        Serial.printf(
-            "AP IP: %s\n",
-            WiFi.softAPIP().toString().c_str()
-        );
-
-        return;
-    }
-
-    if (sub.equalsIgnoreCase("off"))
-    {
-        Serial.println("Disabling AP");
-
-        WiFi.softAPdisconnect(true);
-
-        WiFi.mode(WIFI_STA);
-
+    if (sub.equalsIgnoreCase("on") || sub.equalsIgnoreCase("off")) {
+        Serial.println("Change AP mode through web settings");
         return;
     }
 
@@ -927,7 +882,7 @@ inline void cliAP(const String& args)
 
         return;
     }
-    Serial.println("Usage: ap on|off|status");
+    Serial.println("Usage: ap status");
     return;
 }
 #endif // DEBUG_CLI
