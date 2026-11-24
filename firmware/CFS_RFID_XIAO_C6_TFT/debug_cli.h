@@ -6,6 +6,7 @@
 extern MFRC522 mfrc522;
 extern Adafruit_ST7789 tft;
 extern void drawDisplay();
+extern void cliRestoreNormalDisplay();
 extern void screenStatus(const String &mode);
 extern bool tempWatchEnabled;
 extern uint32_t nextTempReport;
@@ -78,8 +79,7 @@ inline void cliDefaultRfidReset()
 
 inline void cliDisplayRestore()
 {
-    screenStatus("READY");
-    drawDisplay();
+    cliRestoreNormalDisplay();
 }
 
 // ---------------------------------------------------
@@ -649,7 +649,7 @@ inline void cliDisplay(const String& args)
 
         Serial.println("Display test complete");
 
-        delay (5000);
+        delay(250);
 
         cliDisplayRestore();
         return;
@@ -659,6 +659,7 @@ inline void cliDisplay(const String& args)
     {
         CLI_TFT_OBJ.fillScreen(ST77XX_BLACK);
         Serial.println("Display cleared");
+        cliDisplayRestore();
         return;
     }
 
@@ -679,6 +680,7 @@ inline void cliDisplay(const String& args)
 
         CLI_TFT_OBJ.fillScreen(c);
         Serial.printf("Display filled with %s\n", rest.c_str());
+        cliDisplayRestore();
         return;
     }
 
@@ -806,7 +808,7 @@ inline void cliLed(const String& args)
         if (!rest.isEmpty())
         {
             int parsed = rest.toInt();
-            if (parsed > 0 && parsed <= 50)
+            if (parsed > 0 && parsed <= 5)
             {
                 count = parsed;
             }
